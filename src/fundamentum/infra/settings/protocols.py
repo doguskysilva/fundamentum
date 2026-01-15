@@ -1,7 +1,13 @@
-from typing import Protocol
+from typing import Any, Protocol
 
 class SettingsProtocol(Protocol):
-    SERVICE_NAME: str
-    ENV: str
-    DEBUG: bool
-    VERSION: str
+    service_name: str
+    service_version: str
+    environment: str
+    log_level: str
+    enable_json_logging: bool
+
+
+class ServiceSettingsProtocol(Protocol):
+    
+    def __getattribute__(self, name: str) -> Any: ...
