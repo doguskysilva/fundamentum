@@ -7,6 +7,7 @@ from fundamentum.infra.observability.helpers import (
     log_http_request,
     log_http_response,
     log_service_request,
+    log_service_response,
 )
 
 
@@ -142,6 +143,45 @@ class TestLogServiceRequest:
         payload = logger.info.call_args.kwargs["extra"]["data"]
         assert payload["params"] == {"order_id": "123"}
         assert payload["user_id"] == "user-456"
+
+
+class TestLogServiceResponse:
+    """Tests for service response logging helper."""
+
+    def test_basic_service_response_payload(self) -> None:
+        logger = MagicMock(spec=logging.Logger)
+
+        log_service_response(
+            logger,
+            log_name="request_completed",
+            endpoint="/api/users",
+            method="GET",
+            status_code=200,
+            service_name="profile",
+            duration_ms=120,
+        )
+
+        level, message = logger.log.call_args.args[:2]
+        assert level == logging.INFO
+        assert message == "service_response: request_completed"
+
+        payload = logger.log.call_args.kwargs["extra"]["data"]
+        assert payload["service_name"] == "profile"
+        assert payload["duration_ms"] == 120
+
+    def test_error_response_escalates_level(self) -> None:
+        logger = MagicMock(spec=logging.Logger)
+
+        log_service_response(
+            logger,
+            log_name="request_completed",
+            endpoint="/api/users",
+            method="GET",
+            status_code=503,
+        )
+
+        level = logger.log.call_args.args[0]
+        assert level == logging.ERROR
 
 
 class TestHelperIntegration:

@@ -16,6 +16,7 @@ from fundamentum.infra.observability.context import (
     increment_trace_id,
     set_trace_id,
 )
+from fundamentum.infra.observability.helpers import log_service_response
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,17 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
         >>> app.add_middleware(ObservabilityMiddleware)
     """
     
+    def __init__(
+        self,
+        app,
+        *,
+        service_name: str | None = None,
+        logger: logging.Logger | None = None,
+    ) -> None:
+        super().__init__(app)
+        self.service_name = service_name
+        self.logger = logger or logging.getLogger(__name__)
+
     async def dispatch(
         self, 
         request: Request, 
@@ -77,7 +89,7 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
             status_code = response.status_code
             return response
         except Exception as e:
-            logger.error(
+            self.logger.error(
                 "request_error",
                 extra={
                     "data": {
@@ -94,18 +106,15 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
         finally:
             duration_ms = int((time.time() - start_time) * 1000)
             
-            # Log request completion
-            logger.info(
-                "request_completed",
-                extra={
-                    "data": {
-                        "log_name": "request_completed",
-                        "method": request.method,
-                        "path": request.url.path,
-                        "status_code": status_code,
-                        "duration_ms": duration_ms,
-                    }
-                },
+            log_service_response(
+                self.logger,
+                log_name="request_completed",
+                endpoint=request.url.path,
+                method=request.method,
+                status_code=status_code,
+                service_name=self.service_name,
+                duration_ms=duration_ms,
+                trace_id=trace_id,
             )
             
             # Add trace ID to response headers if response exists
