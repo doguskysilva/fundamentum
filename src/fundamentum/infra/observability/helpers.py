@@ -1,0 +1,146 @@
+"""Helper utilities for structured logging in different infra layers.
+
+This module provides utility functions to create structured log data
+for different infrastructure components following consistent patterns.
+"""
+
+import logging
+from typing import Any
+
+
+def log_http_request(
+    logger: logging.Logger,
+    log_name: str,
+    endpoint_name: str,
+    url: str,
+    method: str = "GET",
+    **kwargs: Any,
+) -> None:
+    """Log an outgoing HTTP request.
+    
+    Args:
+        logger: Logger instance to use
+        log_name: Name/identifier for this log entry
+        endpoint_name: Name of the endpoint from registry
+        url: Full URL being requested
+        method: HTTP method (GET, POST, etc.)
+        **kwargs: Additional fields to include in data
+        
+    Example:
+        >>> logger = get_logger(__name__)
+        >>> log_http_request(
+        ...     logger,
+        ...     log_name="fetch_user_data",
+        ...     endpoint_name="get_user",
+        ...     url="https://api.example.com/users/123",
+        ...     method="GET"
+        ... )
+    """
+    data = {
+        "log_name": log_name,
+        "endpoint": endpoint_name,
+        "url": url,
+        "method": method,
+        **kwargs,
+    }
+    
+    logger.info(f"http_request: {log_name}", extra={"data": data})
+
+
+def log_http_response(
+    logger: logging.Logger,
+    log_name: str,
+    endpoint_name: str,
+    url: str,
+    status_code: int,
+    method: str = "GET",
+    duration_ms: int | None = None,
+    **kwargs: Any,
+) -> None:
+    """Log an HTTP response received.
+    
+    Args:
+        logger: Logger instance to use
+        log_name: Name/identifier for this log entry (same as request)
+        endpoint_name: Name of the endpoint from registry
+        url: Full URL that was requested
+        status_code: HTTP status code received
+        method: HTTP method used
+        duration_ms: Request duration in milliseconds
+        **kwargs: Additional fields to include in data
+        
+    Example:
+        >>> logger = get_logger(__name__)
+        >>> log_http_response(
+        ...     logger,
+        ...     log_name="fetch_user_data",
+        ...     endpoint_name="get_user",
+        ...     url="https://api.example.com/users/123",
+        ...     status_code=200,
+        ...     method="GET",
+        ...     duration_ms=145
+        ... )
+    """
+    data = {
+        "log_name": log_name,
+        "endpoint": endpoint_name,
+        "url": url,
+        "method": method,
+        "status_code": status_code,
+    }
+    
+    if duration_ms is not None:
+        data["duration_ms"] = duration_ms
+    
+    data.update(kwargs)
+    
+    log_level = logging.INFO if 200 <= status_code < 400 else logging.ERROR
+    logger.log(log_level, f"http_response: {log_name}", extra={"data": data})
+
+
+def log_service_request(
+    logger: logging.Logger,
+    log_name: str,
+    endpoint: str,
+    origin_service: str,
+    method: str,
+    params: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> None:
+    """Log a service request being processed.
+    
+    Used by the service receiving the request to log incoming calls.
+    
+    Args:
+        logger: Logger instance to use
+        log_name: Name/identifier for this log entry
+        endpoint: Endpoint being called
+        origin_service: Name of the service making the request
+        method: HTTP method or operation name
+        params: Request parameters/payload
+        **kwargs: Additional fields to include in data
+        
+    Example:
+        >>> logger = get_logger(__name__)
+        >>> log_service_request(
+        ...     logger,
+        ...     log_name="process_user_update",
+        ...     endpoint="/api/users/123",
+        ...     origin_service="user-service",
+        ...     method="PUT",
+        ...     params={"name": "John Doe", "email": "john@example.com"}
+        ... )
+    """
+    data = {
+        "log_name": log_name,
+        "endpoint": endpoint,
+        "origin_service": origin_service,
+        "method": method,
+    }
+    
+    if params is not None:
+        data["params"] = params
+    
+    data.update(kwargs)
+    
+    logger.info(f"service_request: {log_name}", extra={"data": data})
