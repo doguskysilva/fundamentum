@@ -313,7 +313,10 @@ class ServiceClient:
                 endpoint=endpoint_key,
                 status_code=e.response.status_code,
             ) from e
-            
+
+        except ServiceError:
+            raise
+
         except Exception as e:
             logger.error(
                 "request_error",
