@@ -62,6 +62,7 @@ class ServiceClient:
         endpoint_registry: EndpointRegistry,
         timeout: float = 10.0,
         max_retries: int = 3,
+        service_name: str | None = None,
     ):
         """Initialize the service client.
         
@@ -70,11 +71,13 @@ class ServiceClient:
             endpoint_registry: Registry for endpoint definitions
             timeout: Default timeout for requests in seconds
             max_retries: Maximum number of retry attempts for failed requests
+            service_name: Name of the calling service (for X-Service-Name header)
         """
         self.service_registry = service_registry
         self.endpoint_registry = endpoint_registry
         self.timeout = timeout
         self.max_retries = max_retries
+        self.service_name = service_name
     
     def _build_url(
         self, 
@@ -135,6 +138,10 @@ class ServiceClient:
         trace_id = get_trace_id()
         if trace_id:
             headers["X-Trace-ID"] = trace_id
+        
+        # Add service name to identify the caller
+        if self.service_name:
+            headers["X-Service-Name"] = self.service_name
         
         return headers
     

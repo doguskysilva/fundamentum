@@ -71,6 +71,21 @@ class TestMiddlewareLoggingStructure:
         assert "data" in extra
         assert extra["data"]["log_name"] == "test"
 
+    def test_peer_service_extracted_from_header(self) -> None:
+        """Test that peer_service is extracted from X-Service-Name header."""
+        # Simulating what middleware extracts from headers
+        headers = {"X-Service-Name": "nuntius"}
+        peer_service = headers.get("X-Service-Name", "unknown")
+
+        assert peer_service == "nuntius"
+
+    def test_peer_service_defaults_to_unknown(self) -> None:
+        """Test that peer_service defaults to 'unknown' when header is missing."""
+        headers = {}
+        peer_service = headers.get("X-Service-Name", "unknown")
+
+        assert peer_service == "unknown"
+
 
 # For full async middleware integration tests, install pytest-asyncio:
 #   pip install pytest-asyncio

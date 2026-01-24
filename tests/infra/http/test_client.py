@@ -146,6 +146,27 @@ def test_build_headers_includes_trace_id(client_with_registry):
 	assert headers["X-Trace-ID"] == "ROOT.ABCD1"
 
 
+def test_build_headers_includes_service_name_when_provided(service_registry, endpoint_registry):
+	client = ServiceClient(
+		service_registry, 
+		endpoint_registry, 
+		timeout=0.5, 
+		service_name="nuntius"
+	)
+
+	headers = client._build_headers()
+
+	assert headers["X-Service-Name"] == "nuntius"
+
+
+def test_build_headers_excludes_service_name_when_not_provided(client_with_registry):
+	client, _ = client_with_registry
+
+	headers = client._build_headers()
+
+	assert "X-Service-Name" not in headers
+
+
 def test_request_returns_validated_response(client_with_registry, async_client_stub):
 	client, registry = client_with_registry
 	endpoint_key = register_endpoint(registry, HttpMethod.GET)
