@@ -4,12 +4,12 @@ import logging
 from unittest.mock import MagicMock
 
 from fundamentum.infra.observability.helpers import (
+    log_http_error,
     log_http_request,
     log_http_response,
+    log_service_error,
     log_service_request,
     log_service_response,
-    log_http_error,
-    log_service_error,
 )
 
 

@@ -1,5 +1,6 @@
 from fundamentum.infra.settings import BaseServiceSettings
 
+
 def test_base_service_settings_default_values():
     settings = BaseServiceSettings(service_name="test-service")
     

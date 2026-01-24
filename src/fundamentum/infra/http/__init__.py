@@ -1,5 +1,3 @@
-"""HTTP client and inter-service communication components."""
-
 from fundamentum.infra.http.client import ServiceClient
 from fundamentum.infra.http.models import (
     HttpMethod,

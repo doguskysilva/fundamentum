@@ -35,25 +35,6 @@ class ServiceClient:
     - Comprehensive error handling and logging
     - Request/response validation with Pydantic models
     - Timeout management
-    
-    Example:
-        >>> from fundamentum.infra.http.client import ServiceClient
-        >>> from fundamentum.infra.http.registry import get_global_registry
-        >>> from fundamentum.infra.settings.registry import ServiceRegistry
-        >>> 
-        >>> service_registry = ServiceRegistry(settings)
-        >>> endpoint_registry = get_global_registry()
-        >>> 
-        >>> client = ServiceClient(
-        ...     service_registry=service_registry,
-        ...     endpoint_registry=endpoint_registry,
-        ... )
-        >>> 
-        >>> # Make a request
-        >>> response = await client.get(
-        ...     "census.customer_by_id",
-        ...     path_params={"customer_id": "123"}
-        ... )
     """
     
     def __init__(
@@ -94,13 +75,6 @@ class ServiceClient:
             
         Returns:
             Complete URL with base URL and resolved path parameters
-            
-        Example:
-            >>> url = client._build_url(
-            ...     endpoint,
-            ...     path_params={"customer_id": "123"}
-            ... )
-            'http://localhost:8001/api/customers/123'
         """
         base_url = self.service_registry.get_base_url(endpoint.service)
         path = endpoint.path

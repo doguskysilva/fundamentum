@@ -13,12 +13,6 @@ class BaseServiceSettings(BaseSettings):
     - Observability settings
     
     Subclass this to add service-specific configuration.
-    
-    Example:
-        >>> class MyServiceSettings(BaseServiceSettings):
-        ...     database_url: str = Field(default="sqlite:///./test.db")
-        ...     
-        >>> settings = MyServiceSettings(service_name="my-service")
     """
     
     model_config = ConfigDict(

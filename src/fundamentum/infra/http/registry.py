@@ -8,27 +8,6 @@ class EndpointRegistry:
     Provides a centralized place to define and access service endpoints.
     Supports hierarchical naming (e.g., "census.customer_by_id") and
     validation of endpoint definitions.
-    
-    Example:
-        >>> from fundamentum.infra.http.models import HttpMethod, ServiceEndpoint
-        >>> from pydantic import BaseModel
-        >>> 
-        >>> class CustomerResponse(BaseModel):
-        ...     id: str
-        ...     name: str
-        ... 
-        >>> registry = EndpointRegistry()
-        >>> registry.register(
-        ...     "census.customer_by_id",
-        ...     ServiceEndpoint(
-        ...         service="census",
-        ...         path="/api/customers/{customer_id}",
-        ...         method=HttpMethod.GET,
-        ...         request_model=None,
-        ...         response_model=CustomerResponse,
-        ...     )
-        ... )
-        >>> endpoint = registry.get("census.customer_by_id")
     """
     
     def __init__(self) -> None:
@@ -44,9 +23,6 @@ class EndpointRegistry:
             
         Raises:
             ValueError: If key is empty or endpoint is already registered
-            
-        Example:
-            >>> registry.register("census.list_customers", endpoint)
         """
         if not key:
             raise ValueError("Endpoint key cannot be empty")
@@ -67,9 +43,6 @@ class EndpointRegistry:
             
         Raises:
             KeyError: If endpoint is not found
-            
-        Example:
-            >>> endpoint = registry.get("census.customer_by_id")
         """
         if key not in self._endpoints:
             available = ", ".join(self.list_keys())
@@ -88,10 +61,6 @@ class EndpointRegistry:
             
         Returns:
             True if endpoint exists, False otherwise
-            
-        Example:
-            >>> if registry.has("census.customer_by_id"):
-            ...     endpoint = registry.get("census.customer_by_id")
         """
         return key in self._endpoints
     
@@ -100,11 +69,6 @@ class EndpointRegistry:
         
         Returns:
             List of endpoint identifiers
-            
-        Example:
-            >>> keys = registry.list_keys()
-            >>> print(keys)
-            ['census.customer_by_id', 'hermes.send_email']
         """
         return list(self._endpoints.keys())
     
@@ -116,11 +80,6 @@ class EndpointRegistry:
             
         Returns:
             Dictionary of endpoint keys and definitions for the service
-            
-        Example:
-            >>> census_endpoints = registry.list_by_service("census")
-            >>> for key, endpoint in census_endpoints.items():
-            ...     print(f"{key}: {endpoint.path}")
         """
         return {
             key: endpoint
@@ -136,9 +95,6 @@ class EndpointRegistry:
             
         Raises:
             KeyError: If endpoint is not found
-            
-        Example:
-            >>> registry.unregister("census.customer_by_id")
         """
         if key not in self._endpoints:
             raise KeyError(f"Endpoint '{key}' not found")
@@ -149,9 +105,6 @@ class EndpointRegistry:
         """Remove all endpoints from the registry.
         
         Useful for testing or reconfiguration.
-        
-        Example:
-            >>> registry.clear()
         """
         self._endpoints.clear()
     
@@ -163,13 +116,6 @@ class EndpointRegistry:
             
         Raises:
             ValueError: If any key is already registered
-            
-        Example:
-            >>> endpoints = {
-            ...     "census.customer_by_id": endpoint1,
-            ...     "census.list_customers": endpoint2,
-            ... }
-            >>> registry.bulk_register(endpoints)
         """
         # Validate all keys first
         conflicts = [key for key in endpoints if key in self._endpoints]
@@ -191,10 +137,5 @@ def get_global_registry() -> EndpointRegistry:
     
     Returns:
         Global EndpointRegistry instance
-        
-    Example:
-        >>> from fundamentum.infra.http.registry import get_global_registry
-        >>> registry = get_global_registry()
-        >>> registry.register("my_service.endpoint", endpoint)
     """
     return _global_registry

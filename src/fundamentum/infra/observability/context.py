@@ -14,11 +14,6 @@ def get_trace_id() -> str | None:
     
     Returns:
         Current trace ID or None if not in a request context
-        
-    Example:
-        >>> from fundamentum.infra.observability.context import get_trace_id
-        >>> trace_id = get_trace_id()
-        >>> logger.info("Processing", extra={"trace_id": trace_id})
     """
     return trace_id_ctx.get()
 
@@ -31,11 +26,6 @@ def set_trace_id(trace_id: str) -> None:
     
     Args:
         trace_id: Trace ID to set in context
-        
-    Example:
-        >>> from fundamentum.infra.observability.context import set_trace_id
-        >>> set_trace_id("abc-123-def")
-        >>> # Now all logs will include this trace ID
     """
     trace_id_ctx.set(trace_id)
 
@@ -56,12 +46,6 @@ def generate_trace_segment() -> str:
     
     Returns:
         5-character alphanumeric string (uppercase)
-        
-    Example:
-        >>> segment = generate_trace_segment()
-        >>> len(segment)
-        5
-        >>> segment  # e.g., 'C32PO', 'V40PO', 'A1B2C'
     """
     return ''.join(secrets.choice(_TRACE_CHARS) for _ in range(5))
 
@@ -78,14 +62,6 @@ def append_trace_segment(trace_id: str | None, segment: str | None = None) -> st
         
     Returns:
         New trace ID with appended segment
-        
-    Example:
-        >>> append_trace_segment('UICALL.C32PO', 'V40PO')
-        'UICALL.C32PO.V40PO'
-        >>> append_trace_segment(None, 'START')
-        'START'
-        >>> append_trace_segment('UICALL.C32PO')  # auto-generates segment
-        'UICALL.C32PO.A1B2C'
     """
     if segment is None:
         segment = generate_trace_segment()
@@ -108,11 +84,5 @@ def increment_trace_id(incoming_trace_id: str | None = None, segment: str | None
         
     Returns:
         Incremented trace ID
-        
-    Example:
-        >>> # Service receives trace from upstream
-        >>> incoming = 'UICALL.C32PO'
-        >>> new_trace = increment_trace_id(incoming)
-        >>> new_trace  # e.g., 'UICALL.C32PO.V40PO'
     """
     return append_trace_segment(incoming_trace_id, segment)

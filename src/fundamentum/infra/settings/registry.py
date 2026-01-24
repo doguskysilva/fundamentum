@@ -6,18 +6,6 @@ class ServiceRegistry:
     
     Automatically discovers services from settings fields ending with '_base_url'.
     Provides a clean interface for resolving service URLs by name.
-    
-    Example:
-        >>> from pydantic import Field
-        >>> from pydantic_settings import BaseSettings
-        >>> 
-        >>> class MySettings(BaseSettings):
-        ...     census_base_url: str = Field(default="http://localhost:8001")
-        ...     hermes_base_url: str = Field(default="http://localhost:8002")
-        ... 
-        >>> registry = ServiceRegistry(MySettings())
-        >>> registry.get_base_url("census")
-        'http://localhost:8001'
     """
     
     def __init__(self, settings: ServiceSettingsProtocol):
@@ -40,10 +28,6 @@ class ServiceRegistry:
             
         Raises:
             ValueError: If service is not configured in settings
-            
-        Example:
-            >>> registry.get_base_url("census")
-            'http://localhost:8081'
         """
         
         if service_name in self._cache:
@@ -67,10 +51,6 @@ class ServiceRegistry:
         
         Returns:
             List of service names that have base URLs configured
-            
-        Example:
-            >>> registry.list_services()
-            ['census', 'hermes']
         """
         return [
             field.replace("_base_url", "")

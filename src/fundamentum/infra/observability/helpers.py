@@ -25,16 +25,6 @@ def log_http_request(
         url: Full URL being requested
         method: HTTP method (GET, POST, etc.)
         **kwargs: Additional fields to include in data
-        
-    Example:
-        >>> logger = get_logger(__name__)
-        >>> log_http_request(
-        ...     logger,
-        ...     url_name="census.customer.get",
-        ...     peer_service="census",
-        ...     url="https://api.example.com/users/123",
-        ...     method="GET"
-        ... )
     """
     data = {
         "name": "http.client.request",
@@ -68,17 +58,6 @@ def log_http_response(
         method: HTTP method used
         duration_ms: Request duration in milliseconds
         **kwargs: Additional fields to include in data
-        
-    Example:
-        >>> logger = get_logger(__name__)
-        >>> log_http_response(
-        ...     logger,
-        ...     url_name="census.customer.get",
-        ...     peer_service="census",
-        ...     status_code=200,
-        ...     method="GET",
-        ...     duration_ms=145
-        ... )
     """
     data = {
         "name": "http.client.response",
@@ -117,16 +96,6 @@ def log_service_request(
         path: Request path being called
         method: HTTP method or operation name
         **kwargs: Additional fields to include in data
-        
-    Example:
-        >>> logger = get_logger(__name__)
-        >>> log_service_request(
-        ...     logger,
-        ...     url_name="customer.update",
-        ...     peer_service="nuntius",
-        ...     path="/api/users/123",
-        ...     method="PUT"
-        ... )
     """
     data = {
         "name": "http.server.request",

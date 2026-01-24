@@ -5,7 +5,6 @@ from fundamentum.infra.http.models import HttpMethod, ServiceEndpoint
 from fundamentum.infra.http.registry import EndpointRegistry
 
 
-
 @pytest.fixture
 def registry():
     return EndpointRegistry()

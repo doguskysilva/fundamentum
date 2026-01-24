@@ -1,5 +1,5 @@
-from fundamentum.infra.http.testing.transport import MockHttpTransport
 from fundamentum.infra.http.models import ServiceEndpoint
+from fundamentum.infra.http.testing.transport import MockHttpTransport
 from fundamentum.infra.settings.registry import ServiceRegistry
 
 

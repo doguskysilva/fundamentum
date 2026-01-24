@@ -29,31 +29,6 @@ class ServiceEndpoint:
         request_model: Pydantic model for request body validation (None for GET/DELETE)
         response_model: Pydantic model for response body validation, or list[Model] for list responses
         timeout: Optional custom timeout for this endpoint (seconds)
-        
-    Example:
-        >>> from pydantic import BaseModel
-        >>> 
-        >>> class CustomerResponse(BaseModel):
-        ...     id: str
-        ...     name: str
-        ... 
-        >>> # Single model response
-        >>> endpoint = ServiceEndpoint(
-        ...     service="census",
-        ...     path="/api/customers/{customer_id}",
-        ...     method=HttpMethod.GET,
-        ...     request_model=None,
-        ...     response_model=CustomerResponse,
-        ... )
-        >>> 
-        >>> # List response
-        >>> endpoint_list = ServiceEndpoint(
-        ...     service="census",
-        ...     path="/api/customers",
-        ...     method=HttpMethod.GET,
-        ...     request_model=None,
-        ...     response_model=list[CustomerResponse],
-        ... )
     """
     
     service: str

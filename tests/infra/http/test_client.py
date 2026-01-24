@@ -17,8 +17,8 @@ from fundamentum.infra.http.models import (
 	ServiceUnavailableError,
 )
 from fundamentum.infra.http.registry import EndpointRegistry
-from fundamentum.infra.settings.registry import ServiceRegistry
 from fundamentum.infra.observability.context import clear_trace_id, set_trace_id
+from fundamentum.infra.settings.registry import ServiceRegistry
 
 
 class ExampleResponse(BaseModel):

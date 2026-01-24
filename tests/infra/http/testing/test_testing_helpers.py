@@ -1,16 +1,17 @@
 """Tests for testing helpers and mock transport."""
 
 import asyncio
-import pytest
-import httpx
-from pydantic import BaseModel
 from types import SimpleNamespace
 
-from fundamentum.infra.http.testing.transport import MockHttpTransport
-from fundamentum.infra.http.testing.helpers import mock_endpoint
-from fundamentum.infra.http.models import HttpMethod, ServiceEndpoint
+import httpx
+import pytest
+from pydantic import BaseModel
+
 from fundamentum.infra.http.client import ServiceClient
+from fundamentum.infra.http.models import HttpMethod, ServiceEndpoint
 from fundamentum.infra.http.registry import EndpointRegistry
+from fundamentum.infra.http.testing.helpers import mock_endpoint
+from fundamentum.infra.http.testing.transport import MockHttpTransport
 from fundamentum.infra.settings.registry import ServiceRegistry
 
 

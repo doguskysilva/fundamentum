@@ -2,11 +2,8 @@
 
 import logging
 import sys
-from unittest.mock import MagicMock, Mock, patch
 
-import pytest
-
-from fundamentum.infra.observability.context import set_trace_id, clear_trace_id
+from fundamentum.infra.observability.context import clear_trace_id, set_trace_id
 from fundamentum.infra.observability.logging import (
     ContextFilter,
     StructuredFormatter,
@@ -436,9 +433,6 @@ class TestLoggingIntegration:
         # Set trace ID
         set_trace_id("UICALL.C32PO.V40PO")
         
-        # Get a logger
-        logger = get_logger("test.module")
-        
         # Verify logger is configured
         assert len(root_logger.handlers) == 1
         
@@ -451,10 +445,6 @@ class TestLoggingIntegration:
         setup_logging(settings)
         
         logger = get_logger("test")
-        
-        # This would normally log, we're just testing structure
-        # In a real test, we'd capture the output
-        data = {"user_id": "123", "action": "login"}
         
         # Verify we can log with extra data
         # (actual log capture would require more complex setup)
@@ -471,8 +461,6 @@ class TestLoggingIntegration:
         )
         setup_logging(settings)
         set_trace_id("TEST.12345")
-        
-        logger = get_logger("integration")
         
         # Create a record manually to test filter + formatter
         record = logging.LogRecord(

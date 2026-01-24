@@ -111,12 +111,6 @@ def setup_logging(settings: SettingsProtocol) -> logging.Logger:
         
     Returns:
         Configured root logger
-        
-    Example:
-        >>> from fundamentum.infra.settings.base import BaseServiceSettings
-        >>> settings = BaseServiceSettings(service_name="my-service")
-        >>> logger = setup_logging(settings)
-        >>> logger.info("Application started")
     """
     # Get root logger
     logger = logging.getLogger()
@@ -164,9 +158,5 @@ def get_logger(name: str | None = None) -> logging.Logger:
         
     Returns:
         Logger instance
-        
-    Example:
-        >>> logger = get_logger(__name__)
-        >>> logger.info("Processing request")
     """
     return logging.getLogger(name)

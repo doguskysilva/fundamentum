@@ -45,11 +45,6 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
     - Service increments: 'UICALL.C32PO.V40PO'
     - Service calls another: sends 'UICALL.C32PO.V40PO'
     - Next service increments: 'UICALL.C32PO.V40PO.A1B2C'
-    
-    Example:
-        >>> from fastapi import FastAPI
-        >>> app = FastAPI()
-        >>> app.add_middleware(ObservabilityMiddleware)
     """
     
     def __init__(

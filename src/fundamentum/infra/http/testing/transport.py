@@ -1,5 +1,6 @@
+from collections.abc import Callable
+
 import httpx
-from typing import Callable
 
 
 class MockHttpTransport:
