@@ -14,9 +14,9 @@ from fundamentum.infra.observability.helpers import (
 )
 from fundamentum.infra.observability.logging import (
     ContextFilter,
+    StructuredFormatter,
     get_logger,
     setup_logging,
-    StructuredFormatter,
 )
 from fundamentum.infra.observability.middleware import ObservabilityMiddleware
 

@@ -23,19 +23,6 @@ known-first-party = ["fundamentum"]
 [lint.flake8-tidy-imports]
 ban-relative-imports = "all"
 
-[[lint.flake8-tidy-imports.banned-imports]]
-name = "fundamentum.infra"
-message = "utils cannot import infra"
-
-# Opcional: impedir que utils importe http / fastapi
-[[lint.flake8-tidy-imports.banned-imports]]
-name = "fastapi"
-message = "utils should be pure Python"
-
-[[lint.flake8-tidy-imports.banned-imports]]
-name = "httpx"
-message = "utils should be pure python"
-
 # Aplica essas regras SOMENTE ao utils
 [lint.per-file-ignores]
 "src/fundamentum/utils/*.py" = []

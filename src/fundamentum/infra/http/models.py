@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Type
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -59,8 +59,8 @@ class ServiceEndpoint:
     service: str
     path: str
     method: HttpMethod
-    request_model: Type[BaseModel] | None
-    response_model: Type[BaseModel] | Any
+    request_model: type[BaseModel] | None
+    response_model: type[BaseModel] | Any
     timeout: float | None = None
     
     def __post_init__(self) -> None:

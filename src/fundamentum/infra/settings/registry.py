@@ -1,5 +1,3 @@
-from typing import Any, Protocol
-
 from fundamentum.infra.settings import ServiceSettingsProtocol
 
 

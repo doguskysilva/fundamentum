@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fundamentum"
-version = "0.0.0"
+version = "0.1.0"
 description = "All common core structure and functions to be used on dogusky.cloud"
 readme = "README.md"
 requires-python = ">=3.11"

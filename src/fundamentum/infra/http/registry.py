@@ -1,4 +1,3 @@
-from typing import Dict
 
 from fundamentum.infra.http.models import ServiceEndpoint
 
@@ -34,7 +33,7 @@ class EndpointRegistry:
     
     def __init__(self) -> None:
         """Initialize an empty endpoint registry."""
-        self._endpoints: Dict[str, ServiceEndpoint] = {}
+        self._endpoints: dict[str, ServiceEndpoint] = {}
     
     def register(self, key: str, endpoint: ServiceEndpoint) -> None:
         """Register a service endpoint.
@@ -109,7 +108,7 @@ class EndpointRegistry:
         """
         return list(self._endpoints.keys())
     
-    def list_by_service(self, service: str) -> Dict[str, ServiceEndpoint]:
+    def list_by_service(self, service: str) -> dict[str, ServiceEndpoint]:
         """List all endpoints for a specific service.
         
         Args:
@@ -156,7 +155,7 @@ class EndpointRegistry:
         """
         self._endpoints.clear()
     
-    def bulk_register(self, endpoints: Dict[str, ServiceEndpoint]) -> None:
+    def bulk_register(self, endpoints: dict[str, ServiceEndpoint]) -> None:
         """Register multiple endpoints at once.
         
         Args:

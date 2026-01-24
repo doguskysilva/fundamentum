@@ -1,5 +1,6 @@
 from typing import Any, Protocol
 
+
 class SettingsProtocol(Protocol):
     service_name: str
     service_version: str

@@ -6,20 +6,19 @@ and observability across microservices.
 
 import logging
 import time
-from typing import Awaitable, Callable
+from collections.abc import Awaitable, Callable
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from fundamentum.infra.observability.context import (
-    get_trace_id,
     increment_trace_id,
     set_trace_id,
 )
 from fundamentum.infra.observability.helpers import (
+    log_service_error,
     log_service_request,
     log_service_response,
-    log_service_error,
 )
 
 logger = logging.getLogger(__name__)

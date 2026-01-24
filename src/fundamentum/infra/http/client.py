@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import Any, Dict, Optional, Type
+from typing import Any
 
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -16,12 +16,11 @@ from fundamentum.infra.http.models import (
 from fundamentum.infra.http.registry import EndpointRegistry
 from fundamentum.infra.observability.context import get_trace_id
 from fundamentum.infra.observability.helpers import (
+    log_http_error,
     log_http_request,
     log_http_response,
-    log_http_error,
 )
 from fundamentum.infra.settings.registry import ServiceRegistry
-
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +79,7 @@ class ServiceClient:
     def _build_url(
         self, 
         endpoint: ServiceEndpoint, 
-        path_params: Optional[Dict[str, Any]] = None
+        path_params: dict[str, Any] | None = None
     ) -> str:
         """Build full URL from endpoint and path parameters.
         
@@ -121,7 +120,7 @@ class ServiceClient:
         
         return f"{base_url}{path}"
     
-    def _build_headers(self) -> Dict[str, str]:
+    def _build_headers(self) -> dict[str, str]:
         """Build request headers with tracing information.
         
         Returns:
@@ -142,9 +141,9 @@ class ServiceClient:
     async def request(
         self,
         endpoint_key: str,
-        path_params: Optional[Dict[str, Any]] = None,
-        query_params: Optional[Dict[str, Any]] = None,
-        body: Optional[BaseModel] = None,
+        path_params: dict[str, Any] | None = None,
+        query_params: dict[str, Any] | None = None,
+        body: BaseModel | None = None,
     ) -> Any:
         """Make an HTTP request to a service endpoint.
         
@@ -349,8 +348,8 @@ class ServiceClient:
     async def get(
         self,
         endpoint_key: str,
-        path_params: Optional[Dict[str, Any]] = None,
-        query_params: Optional[Dict[str, Any]] = None,
+        path_params: dict[str, Any] | None = None,
+        query_params: dict[str, Any] | None = None,
     ) -> Any:
         """Make a GET request to a service endpoint.
         
@@ -372,8 +371,8 @@ class ServiceClient:
         self,
         endpoint_key: str,
         body: BaseModel,
-        path_params: Optional[Dict[str, Any]] = None,
-        query_params: Optional[Dict[str, Any]] = None,
+        path_params: dict[str, Any] | None = None,
+        query_params: dict[str, Any] | None = None,
     ) -> Any:
         """Make a POST request to a service endpoint.
         
@@ -397,8 +396,8 @@ class ServiceClient:
         self,
         endpoint_key: str,
         body: BaseModel,
-        path_params: Optional[Dict[str, Any]] = None,
-        query_params: Optional[Dict[str, Any]] = None,
+        path_params: dict[str, Any] | None = None,
+        query_params: dict[str, Any] | None = None,
     ) -> Any:
         """Make a PUT request to a service endpoint.
         
@@ -421,8 +420,8 @@ class ServiceClient:
     async def delete(
         self,
         endpoint_key: str,
-        path_params: Optional[Dict[str, Any]] = None,
-        query_params: Optional[Dict[str, Any]] = None,
+        path_params: dict[str, Any] | None = None,
+        query_params: dict[str, Any] | None = None,
     ) -> Any:
         """Make a DELETE request to a service endpoint.
         
