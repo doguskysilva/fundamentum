@@ -135,7 +135,7 @@ def setup_logging(settings: SettingsProtocol) -> logging.Logger:
     # Configure formatter
     if settings.enable_json_logging:
         formatter = StructuredFormatter(
-            "%(asctime)s %(level)s %(logger)s %(trace_id)s %(message)s"
+            "%(asctime)s %(levelname)s %(name)s %(trace_id)s %(message)s"
         )
     else:
         formatter = logging.Formatter(
