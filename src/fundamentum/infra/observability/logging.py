@@ -82,6 +82,16 @@ class StructuredFormatter(JsonFormatter):
         if "name" in log_record:
             log_record["logger"] = log_record.pop("name")
         
+        # Add service context fields
+        if hasattr(record, 'service_name'):
+            log_record["service"] = record.service_name
+        
+        if hasattr(record, 'version'):
+            log_record["version"] = record.version
+        
+        if hasattr(record, 'environment'):
+            log_record["environment"] = record.environment
+        
         # Extract data field from extra if present
         if hasattr(record, 'data') and record.data:
             log_record["data"] = record.data

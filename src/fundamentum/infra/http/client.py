@@ -15,7 +15,11 @@ from fundamentum.infra.http.models import (
 )
 from fundamentum.infra.http.registry import EndpointRegistry
 from fundamentum.infra.observability.context import get_trace_id
-from fundamentum.infra.observability.helpers import log_http_request, log_http_response
+from fundamentum.infra.observability.helpers import (
+    log_http_request,
+    log_http_response,
+    log_http_error,
+)
 from fundamentum.infra.settings.registry import ServiceRegistry
 
 
@@ -185,8 +189,8 @@ class ServiceClient:
         # Log outgoing request with structured data
         log_http_request(
             logger,
-            log_name=f"request_{endpoint_key}",
-            endpoint_name=endpoint_key,
+            url_name=endpoint_key,
+            peer_service=endpoint.service,
             url=url,
             method=endpoint.method.value,
         )
@@ -217,13 +221,15 @@ class ServiceClient:
                 
                 # Handle 404 specially
                 if response.status_code == 404:
-                    logger.warning(
-                        "resource_not_found",
-                        extra={
-                            "endpoint_key": endpoint_key,
-                            "url": url,
-                            "status_code": 404,
-                        }
+                    log_http_error(
+                        logger,
+                        url_name=endpoint_key,
+                        peer_service=endpoint.service,
+                        method=endpoint.method.value,
+                        error=f"Resource not found at {url}",
+                        error_type="ServiceNotFoundError",
+                        status_code=404,
+                        url=url,
                     )
                     raise ServiceNotFoundError(
                         f"Resource not found at {url}",
@@ -232,13 +238,15 @@ class ServiceClient:
                 
                 # Handle 5xx errors
                 if response.status_code >= 500:
-                    logger.error(
-                        "service_unavailable",
-                        extra={
-                            "endpoint_key": endpoint_key,
-                            "url": url,
-                            "status_code": response.status_code,
-                        }
+                    log_http_error(
+                        logger,
+                        url_name=endpoint_key,
+                        peer_service=endpoint.service,
+                        method=endpoint.method.value,
+                        error=f"Service unavailable: HTTP {response.status_code}",
+                        error_type="ServiceUnavailableError",
+                        status_code=response.status_code,
+                        url=url,
                     )
                     raise ServiceUnavailableError(
                         f"Service unavailable: HTTP {response.status_code}",
@@ -253,12 +261,12 @@ class ServiceClient:
                 duration_ms = int((time.time() - start_time) * 1000)
                 log_http_response(
                     logger,
-                    log_name=f"request_{endpoint_key}",
-                    endpoint_name=endpoint_key,
-                    url=url,
+                    url_name=endpoint_key,
+                    peer_service=endpoint.service,
                     status_code=response.status_code,
                     method=endpoint.method.value,
                     duration_ms=duration_ms,
+                    url=url,
                 )
                 
                 # Parse and validate response
@@ -272,26 +280,30 @@ class ServiceClient:
                         )
                         return validated_response
                     except ValidationError as e:
-                        logger.error(
-                            "response_validation_error",
-                            extra={
-                                "endpoint_key": endpoint_key,
-                                "url": url,
-                                "validation_errors": e.errors(),
-                            }
+                        log_http_error(
+                            logger,
+                            url_name=endpoint_key,
+                            peer_service=endpoint.service,
+                            method=endpoint.method.value,
+                            error="Response validation failed",
+                            error_type="ValidationError",
+                            validation_errors=e.errors(),
+                            url=url,
                         )
                         raise
                 
                 return None
                 
         except httpx.TimeoutException as e:
-            logger.error(
-                "request_timeout",
-                extra={
-                    "endpoint_key": endpoint_key,
-                    "url": url,
-                    "timeout": timeout,
-                }
+            log_http_error(
+                logger,
+                url_name=endpoint_key,
+                peer_service=endpoint.service,
+                method=endpoint.method.value,
+                error=f"Request timed out after {timeout}s",
+                error_type="ServiceTimeoutError",
+                timeout=timeout,
+                url=url,
             )
             raise ServiceTimeoutError(
                 f"Request to {url} timed out after {timeout}s",
@@ -299,14 +311,16 @@ class ServiceClient:
             ) from e
             
         except httpx.HTTPStatusError as e:
-            logger.error(
-                "http_error",
-                extra={
-                    "endpoint_key": endpoint_key,
-                    "url": url,
-                    "status_code": e.response.status_code,
-                    "response_body": e.response.text[:500],  # First 500 chars
-                }
+            log_http_error(
+                logger,
+                url_name=endpoint_key,
+                peer_service=endpoint.service,
+                method=endpoint.method.value,
+                error=f"HTTP error {e.response.status_code}",
+                error_type="HTTPStatusError",
+                status_code=e.response.status_code,
+                response_body=e.response.text[:500],
+                url=url,
             )
             raise ServiceError(
                 f"HTTP error {e.response.status_code}: {e.response.text[:200]}",
@@ -318,15 +332,14 @@ class ServiceClient:
             raise
 
         except Exception as e:
-            logger.error(
-                "request_error",
-                extra={
-                    "endpoint_key": endpoint_key,
-                    "url": url,
-                    "error": str(e),
-                    "error_type": type(e).__name__,
-                },
-                exc_info=True,
+            log_http_error(
+                logger,
+                url_name=endpoint_key,
+                peer_service=endpoint.service,
+                method=endpoint.method.value,
+                error=str(e),
+                error_type=type(e).__name__,
+                url=url,
             )
             raise ServiceError(
                 f"Request failed: {str(e)}",

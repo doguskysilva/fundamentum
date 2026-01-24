@@ -16,7 +16,11 @@ from fundamentum.infra.observability.context import (
     increment_trace_id,
     set_trace_id,
 )
-from fundamentum.infra.observability.helpers import log_service_response
+from fundamentum.infra.observability.helpers import (
+    log_service_request,
+    log_service_response,
+    log_service_error,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +85,23 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
         trace_id = increment_trace_id(incoming_trace_id)
         set_trace_id(trace_id)
         
+        # Extract peer service from header or use "unknown"
+        peer_service = request.headers.get("X-Service-Name", "unknown")
+        
+        # Determine url_name from path (you can customize this)
+        url_name = request.url.path.lstrip("/").replace("/", ".")
+        if not url_name:
+            url_name = "root"
+        
+        # Log incoming request
+        log_service_request(
+            self.logger,
+            url_name=url_name,
+            peer_service=peer_service,
+            path=request.url.path,
+            method=request.method,
+        )
+        
         response = None
         status_code = 500  # Default to error if something goes wrong
         
@@ -89,18 +110,13 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
             status_code = response.status_code
             return response
         except Exception as e:
-            self.logger.error(
-                "request_error",
-                extra={
-                    "data": {
-                        "log_name": "request_error",
-                        "method": request.method,
-                        "path": request.url.path,
-                        "error": str(e),
-                        "error_type": type(e).__name__,
-                    }
-                },
-                exc_info=True,
+            log_service_error(
+                self.logger,
+                url_name=url_name,
+                peer_service=peer_service,
+                method=request.method,
+                error=str(e),
+                error_type=type(e).__name__,
             )
             raise
         finally:
@@ -108,13 +124,11 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
             
             log_service_response(
                 self.logger,
-                log_name="request_completed",
-                endpoint=request.url.path,
+                url_name=url_name,
+                peer_service=peer_service,
                 method=request.method,
                 status_code=status_code,
-                service_name=self.service_name,
                 duration_ms=duration_ms,
-                trace_id=trace_id,
             )
             
             # Add trace ID to response headers if response exists

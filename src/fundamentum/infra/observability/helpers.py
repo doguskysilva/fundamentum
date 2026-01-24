@@ -10,18 +10,18 @@ from typing import Any
 
 def log_http_request(
     logger: logging.Logger,
-    log_name: str,
-    endpoint_name: str,
+    url_name: str,
+    peer_service: str,
     url: str,
     method: str = "GET",
     **kwargs: Any,
 ) -> None:
-    """Log an outgoing HTTP request.
+    """Log an outgoing HTTP request (client-side).
     
     Args:
         logger: Logger instance to use
-        log_name: Name/identifier for this log entry
-        endpoint_name: Name of the endpoint from registry
+        url_name: Logical endpoint name (e.g., 'census.customer.get')
+        peer_service: Target service name
         url: Full URL being requested
         method: HTTP method (GET, POST, etc.)
         **kwargs: Additional fields to include in data
@@ -30,40 +30,40 @@ def log_http_request(
         >>> logger = get_logger(__name__)
         >>> log_http_request(
         ...     logger,
-        ...     log_name="fetch_user_data",
-        ...     endpoint_name="get_user",
+        ...     url_name="census.customer.get",
+        ...     peer_service="census",
         ...     url="https://api.example.com/users/123",
         ...     method="GET"
         ... )
     """
     data = {
-        "log_name": log_name,
-        "endpoint": endpoint_name,
-        "url": url,
+        "name": "http.client.request",
+        "direction": "outbound",
+        "peer_service": peer_service,
         "method": method,
+        "url": url,
+        "url_name": url_name,
         **kwargs,
     }
     
-    logger.info(f"http_request: {log_name}", extra={"data": data})
+    logger.info("http.client.request", extra={"data": data})
 
 
 def log_http_response(
     logger: logging.Logger,
-    log_name: str,
-    endpoint_name: str,
-    url: str,
+    url_name: str,
+    peer_service: str,
     status_code: int,
     method: str = "GET",
     duration_ms: int | None = None,
     **kwargs: Any,
 ) -> None:
-    """Log an HTTP response received.
+    """Log an HTTP response received (client-side).
     
     Args:
         logger: Logger instance to use
-        log_name: Name/identifier for this log entry (same as request)
-        endpoint_name: Name of the endpoint from registry
-        url: Full URL that was requested
+        url_name: Logical endpoint name (e.g., 'census.customer.get')
+        peer_service: Target service name that responded
         status_code: HTTP status code received
         method: HTTP method used
         duration_ms: Request duration in milliseconds
@@ -73,19 +73,19 @@ def log_http_response(
         >>> logger = get_logger(__name__)
         >>> log_http_response(
         ...     logger,
-        ...     log_name="fetch_user_data",
-        ...     endpoint_name="get_user",
-        ...     url="https://api.example.com/users/123",
+        ...     url_name="census.customer.get",
+        ...     peer_service="census",
         ...     status_code=200,
         ...     method="GET",
         ...     duration_ms=145
         ... )
     """
     data = {
-        "log_name": log_name,
-        "endpoint": endpoint_name,
-        "url": url,
+        "name": "http.client.response",
+        "direction": "inbound",
+        "peer_service": peer_service,
         "method": method,
+        "url_name": url_name,
         "status_code": status_code,
     }
     
@@ -95,89 +95,148 @@ def log_http_response(
     data.update(kwargs)
     
     log_level = logging.INFO if 200 <= status_code < 400 else logging.ERROR
-    logger.log(log_level, f"http_response: {log_name}", extra={"data": data})
+    logger.log(log_level, "http.client.response", extra={"data": data})
 
 
 def log_service_request(
     logger: logging.Logger,
-    log_name: str,
-    endpoint: str,
-    origin_service: str,
+    url_name: str,
+    peer_service: str,
+    path: str,
     method: str,
-    params: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> None:
-    """Log a service request being processed.
+    """Log an incoming service request (server-side).
     
     Used by the service receiving the request to log incoming calls.
     
     Args:
         logger: Logger instance to use
-        log_name: Name/identifier for this log entry
-        endpoint: Endpoint being called
-        origin_service: Name of the service making the request
+        url_name: Logical endpoint name (e.g., 'customer.get')
+        peer_service: Name of the service making the request
+        path: Request path being called
         method: HTTP method or operation name
-        params: Request parameters/payload
         **kwargs: Additional fields to include in data
         
     Example:
         >>> logger = get_logger(__name__)
         >>> log_service_request(
         ...     logger,
-        ...     log_name="process_user_update",
-        ...     endpoint="/api/users/123",
-        ...     origin_service="user-service",
-        ...     method="PUT",
-        ...     params={"name": "John Doe", "email": "john@example.com"}
+        ...     url_name="customer.update",
+        ...     peer_service="nuntius",
+        ...     path="/api/users/123",
+        ...     method="PUT"
         ... )
     """
     data = {
-        "log_name": log_name,
-        "endpoint": endpoint,
-        "origin_service": origin_service,
+        "name": "http.server.request",
+        "direction": "inbound",
+        "peer_service": peer_service,
         "method": method,
+        "path": path,
+        "url_name": url_name,
+        **kwargs,
     }
     
-    if params is not None:
-        data["params"] = params
-    
-    data.update(kwargs)
-    
-    logger.info(f"service_request: {log_name}", extra={"data": data})
+    logger.info("http.server.request", extra={"data": data})
 
 
 def log_service_response(
     logger: logging.Logger,
-    log_name: str,
-    endpoint: str,
+    url_name: str,
+    peer_service: str,
     method: str,
     status_code: int,
-    service_name: str | None = None,
     duration_ms: int | None = None,
     **kwargs: Any,
 ) -> None:
-    """Log the response generated by this service.
+    """Log the response generated by this service (server-side).
     
     Args:
         logger: Logger instance to use
-        log_name: Name/identifier for this log entry
-        endpoint: Endpoint path that produced the response
+        url_name: Logical endpoint name (e.g., 'customer.get')
+        peer_service: Name of the service that made the request
         method: HTTP method handled
         status_code: HTTP status code returned
-        service_name: Optional name of the current service
         duration_ms: Optional duration in milliseconds
         **kwargs: Additional fields to include in data
     """
     data = {
-        "log_name": log_name,
-        "endpoint": endpoint,
+        "name": "http.server.response",
+        "direction": "outbound",
+        "peer_service": peer_service,
         "method": method,
+        "url_name": url_name,
         "status_code": status_code,
     }
-    if service_name:
-        data["service_name"] = service_name
     if duration_ms is not None:
         data["duration_ms"] = duration_ms
     data.update(kwargs)
     log_level = logging.INFO if 200 <= status_code < 400 else logging.ERROR
-    logger.log(log_level, f"service_response: {log_name}", extra={"data": data})
+    logger.log(log_level, "http.server.response", extra={"data": data})
+
+
+def log_http_error(
+    logger: logging.Logger,
+    url_name: str,
+    peer_service: str,
+    method: str,
+    error: str,
+    error_type: str,
+    **kwargs: Any,
+) -> None:
+    """Log an HTTP client error.
+    
+    Args:
+        logger: Logger instance to use
+        url_name: Logical endpoint name
+        peer_service: Target service name
+        method: HTTP method
+        error: Error message
+        error_type: Type of error
+        **kwargs: Additional fields to include in data
+    """
+    data = {
+        "name": "http.client.error",
+        "direction": "inbound",
+        "peer_service": peer_service,
+        "method": method,
+        "url_name": url_name,
+        "error": error,
+        "error_type": error_type,
+        **kwargs,
+    }
+    logger.error("http.client.error", extra={"data": data})
+
+
+def log_service_error(
+    logger: logging.Logger,
+    url_name: str,
+    peer_service: str,
+    method: str,
+    error: str,
+    error_type: str,
+    **kwargs: Any,
+) -> None:
+    """Log a service error (server-side).
+    
+    Args:
+        logger: Logger instance to use
+        url_name: Logical endpoint name
+        peer_service: Calling service name
+        method: HTTP method
+        error: Error message
+        error_type: Type of error
+        **kwargs: Additional fields to include in data
+    """
+    data = {
+        "name": "http.server.error",
+        "direction": "outbound",
+        "peer_service": peer_service,
+        "method": method,
+        "url_name": url_name,
+        "error": error,
+        "error_type": error_type,
+        **kwargs,
+    }
+    logger.error("http.server.error", extra={"data": data})
