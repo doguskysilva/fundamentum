@@ -63,6 +63,7 @@ class ServiceClient:
         timeout: float = 10.0,
         max_retries: int = 3,
         service_name: str | None = None,
+        transport: httpx.AsyncBaseTransport | None = None,
     ):
         """Initialize the service client.
         
@@ -78,7 +79,8 @@ class ServiceClient:
         self.timeout = timeout
         self.max_retries = max_retries
         self.service_name = service_name
-    
+        self._transport = transport
+
     def _build_url(
         self, 
         endpoint: ServiceEndpoint, 
@@ -204,7 +206,7 @@ class ServiceClient:
         start_time = time.time()
         
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
+            async with httpx.AsyncClient(timeout=timeout, transport=self._transport) as client:
                 # Make request based on HTTP method
                 if endpoint.method == HttpMethod.GET:
                     response = await client.get(url, params=query_params, headers=headers)

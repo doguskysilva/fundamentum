@@ -1,6 +1,3 @@
-"""Common utilities for microservices.
-
-This module will contain shared utility functions and helpers.
-"""
+"""Common utilities for microservices."""
 
 __all__: list[str] = []
