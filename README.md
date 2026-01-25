@@ -86,7 +86,7 @@ settings = Settings(service_name="my-service")
 # 2. Setup logging
 logger = setup_logging(settings)
 
-# 3. Create FastAPI app with middleware
+# 3. Create FastAPI app with middleware (adds request tracing and logging)
 app = FastAPI()
 app.add_middleware(ObservabilityMiddleware)
 
