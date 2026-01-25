@@ -83,7 +83,3 @@ async def get_customer(customer_id: str):
 - **[Settings](api/settings.md)** - Configuration management
 - **[Observability](api/observability.md)** - Logging and request tracking
 - **[Testing](api/testing.md)** - Mocking utilities
-
-## Migration Guide
-
-Migrating from `temp/` code? See [INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md)
