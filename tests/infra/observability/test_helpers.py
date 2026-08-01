@@ -3,6 +3,8 @@
 import logging
 from unittest.mock import MagicMock
 
+import pytest
+
 from fundamentum.infra.observability.helpers import (
     log_http_error,
     log_http_request,
@@ -89,7 +91,7 @@ class TestLogHttpResponse:
             },
         )
 
-    def test_error_response_escalates_log_level(self) -> None:
+    def test_client_error_response_logs_as_warning(self) -> None:
         logger = MagicMock(spec=logging.Logger)
 
         log_http_response(
@@ -101,8 +103,42 @@ class TestLogHttpResponse:
         )
 
         level, message = logger.log.call_args.args[:2]
-        assert level == logging.ERROR
+        assert level == logging.WARNING
         assert message == "http.client.response"
+
+    @pytest.mark.parametrize(
+        ("status_code", "expected_level"),
+        [
+            (200, logging.INFO),
+            (201, logging.INFO),
+            (301, logging.INFO),
+            (304, logging.INFO),
+            (400, logging.WARNING),
+            (401, logging.WARNING),
+            (403, logging.WARNING),
+            (404, logging.WARNING),
+            (422, logging.WARNING),
+            (429, logging.WARNING),
+            (500, logging.ERROR),
+            (502, logging.ERROR),
+            (503, logging.ERROR),
+        ],
+    )
+    def test_response_log_level_by_status_code(
+        self, status_code: int, expected_level: int, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        logger = logging.getLogger("test-http-client-response")
+
+        with caplog.at_level(logging.INFO, logger=logger.name):
+            log_http_response(
+                logger,
+                url_name="census.customer.get",
+                peer_service="census",
+                status_code=status_code,
+                method="GET",
+            )
+
+        assert caplog.records[0].levelno == expected_level
 
 
 class TestLogServiceRequest:
@@ -189,6 +225,54 @@ class TestLogServiceResponse:
 
         level = logger.log.call_args.args[0]
         assert level == logging.ERROR
+
+    def test_client_error_response_logs_as_warning(self) -> None:
+        logger = MagicMock(spec=logging.Logger)
+
+        log_service_response(
+            logger,
+            url_name="customer.get",
+            peer_service="nuntius",
+            method="GET",
+            status_code=404,
+        )
+
+        level = logger.log.call_args.args[0]
+        assert level == logging.WARNING
+
+    @pytest.mark.parametrize(
+        ("status_code", "expected_level"),
+        [
+            (200, logging.INFO),
+            (201, logging.INFO),
+            (301, logging.INFO),
+            (304, logging.INFO),
+            (400, logging.WARNING),
+            (401, logging.WARNING),
+            (403, logging.WARNING),
+            (404, logging.WARNING),
+            (422, logging.WARNING),
+            (429, logging.WARNING),
+            (500, logging.ERROR),
+            (502, logging.ERROR),
+            (503, logging.ERROR),
+        ],
+    )
+    def test_response_log_level_by_status_code(
+        self, status_code: int, expected_level: int, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        logger = logging.getLogger("test-http-server-response")
+
+        with caplog.at_level(logging.INFO, logger=logger.name):
+            log_service_response(
+                logger,
+                url_name="customer.get",
+                peer_service="nuntius",
+                method="GET",
+                status_code=status_code,
+            )
+
+        assert caplog.records[0].levelno == expected_level
 
 
 class TestLogHttpError:

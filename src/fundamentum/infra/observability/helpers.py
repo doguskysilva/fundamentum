@@ -8,6 +8,19 @@ import logging
 from typing import Any
 
 
+def _log_level_for_status(status_code: int) -> int:
+    """Map an HTTP status code to a logging level.
+
+    5xx -> ERROR (server fault), 4xx -> WARNING (client error, expected),
+    everything else -> INFO.
+    """
+    if status_code >= 500:
+        return logging.ERROR
+    if status_code >= 400:
+        return logging.WARNING
+    return logging.INFO
+
+
 def log_http_request(
     logger: logging.Logger,
     url_name: str,
@@ -73,7 +86,7 @@ def log_http_response(
 
     data.update(kwargs)
 
-    log_level = logging.INFO if 200 <= status_code < 400 else logging.ERROR
+    log_level = _log_level_for_status(status_code)
     logger.log(log_level, "http.client.response", extra={"data": data})
 
 
@@ -141,7 +154,7 @@ def log_service_response(
     if duration_ms is not None:
         data["duration_ms"] = duration_ms
     data.update(kwargs)
-    log_level = logging.INFO if 200 <= status_code < 400 else logging.ERROR
+    log_level = _log_level_for_status(status_code)
     logger.log(log_level, "http.server.response", extra={"data": data})
 
 
