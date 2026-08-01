@@ -46,25 +46,40 @@ you're contributing, install `uv` and run `uv sync` to set up the environment.
 
 ### Observability
 
-- `request_id` propagation using `contextvars`
+- `trace_id` propagation using `contextvars`, via a homegrown chained
+  `X-Trace-ID` header (e.g. `UICALL.C32PO.V40PO`) that grows one segment per
+  hop
+- A W3C `traceparent` header propagated alongside it, for interop with
+  standard tracing backends (Jaeger, Tempo, etc.)
 - FastAPI middleware for request tracing
 - JSON logging to stdout
 - Automatic injection of:
   - service name
   - environment
   - version
-  - request_id
+  - trace_id
+- An optional, pluggable request-metrics recorder (count/duration by peer
+  service), with an opt-in Prometheus adapter behind the `metrics` extra
 
-> **Note on tracing:** tracing here means propagating a correlation header
-> (`X-Request-ID`) across service calls, not emitting spans. There is no
-> OpenTelemetry integration today — this is deliberately minimal.
+> **Note on tracing:** the `X-Trace-ID` chain is a lightweight, dependency-free
+> scheme, not a tracing SDK — there's no span model or sampling. The
+> `traceparent` header is real W3C Trace Context, so it plugs into existing
+> tracing backends, but Fundamentum itself doesn't emit spans or export to a
+> collector. See `docs/api/observability.md` for both.
 
 ### Internal HTTP Communication
 
 - `ServiceEndpoint` contract definition
-- Generic `ServiceClient`
-- Automatic propagation of `X-Request-ID`
+- Generic `ServiceClient`, with retry (backoff + jitter) for idempotent
+  methods and a pooled connection reused across requests
+- Automatic propagation of `X-Trace-ID` and `traceparent`
 - Environment-based service resolution via `.env`
+
+### Health Checks
+
+- `create_health_router()` — a small `APIRouter` with `/healthz` (liveness,
+  no dependency checks) and `/readyz` (readiness, aggregates named
+  sync/async checks you supply)
 
 ## What Fundamentum Does NOT Provide
 
@@ -94,6 +109,15 @@ Or install locally for development:
 
 ```
 pip install -e /path/to/fundamentum
+```
+
+Ships a `py.typed` marker (PEP 561), so `mypy`/`pyright` in consuming
+services pick up its type hints instead of treating it as untyped.
+
+Want the optional Prometheus metrics adapter too? Add the `metrics` extra:
+
+```
+fundamentum[metrics] @ git+https://github.com/doguskysilva/fundamentum.git@v0.2.0
 ```
 
 ## Quick Start
