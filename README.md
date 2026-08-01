@@ -33,7 +33,7 @@ It contains no business logic and no domain models — see
 
 ## Requirements
 
-- Python 3.11+
+- Python 3.14+
 - FastAPI / Pydantic
 
 The project uses [`uv`](https://github.com/astral-sh/uv) for dependency
