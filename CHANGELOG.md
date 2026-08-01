@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.0](https://github.com/doguskysilva/fundamentum/compare/v0.3.0...v0.4.0) (2026-08-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* **observability:** Remove the homegrown trace context exports, including get_trace_id, set_trace_id, clear_trace_id, trace_id_ctx, trace segment helpers, and manual traceparent helpers. X-Trace-ID propagation is replaced by optional OpenTelemetry W3C Trace Context instrumentation.
+
+### Features
+
+* **observability:** replace homegrown tracing with OpenTelemetry ([d720b79](https://github.com/doguskysilva/fundamentum/commit/d720b795a3041a6617afae429e62dbb0bdf90c7e))
+
 ## [0.3.0](https://github.com/doguskysilva/fundamentum/compare/v0.2.1...v0.3.0) (2026-08-01)
 
 
