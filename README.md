@@ -26,7 +26,7 @@ It provides:
 
 - Structured logging
 - Request correlation
-- Minimal distributed tracing (header propagation — see the note below)
+- Optional OpenTelemetry tracing with W3C Trace Context propagation
 - A generic internal HTTP client
 - Explicit service integration contracts
 
@@ -46,33 +46,30 @@ you're contributing, install `uv` and run `uv sync` to set up the environment.
 
 ### Observability
 
-- `trace_id` propagation using `contextvars`, via a homegrown chained
-  `X-Trace-ID` header (e.g. `UICALL.C32PO.V40PO`) that grows one segment per
-  hop
-- A W3C `traceparent` header propagated alongside it, for interop with
-  standard tracing backends (Jaeger, Tempo, etc.)
-- FastAPI middleware for request tracing
+- OpenTelemetry server/client spans using W3C `traceparent` propagation
+- FastAPI middleware for structured request/response/error logging
 - JSON logging to stdout
 - Automatic injection of:
   - service name
   - environment
   - version
-  - trace_id
+  - `trace_id` and `span_id` from the current OpenTelemetry span
 - An optional, pluggable request-metrics recorder (count/duration by peer
   service), with an opt-in Prometheus adapter behind the `metrics` extra
 
-> **Note on tracing:** the `X-Trace-ID` chain is a lightweight, dependency-free
-> scheme, not a tracing SDK — there's no span model or sampling. The
-> `traceparent` header is real W3C Trace Context, so it plugs into existing
-> tracing backends, but Fundamentum itself doesn't emit spans or export to a
-> collector. See `docs/api/observability.md` for both.
+> **Note on tracing:** tracing is opt-in. Install `fundamentum[otel]`, call
+> `setup_tracing(app, settings)` once during startup, and configure the OTLP
+> exporter with standard `OTEL_*` environment variables. Without the extra,
+> the package still provides structured logging, middleware, and HTTP client
+> functionality without span export.
 
 ### Internal HTTP Communication
 
 - `ServiceEndpoint` contract definition
 - Generic `ServiceClient`, with retry (backoff + jitter) for idempotent
   methods and a pooled connection reused across requests
-- Automatic propagation of `X-Trace-ID` and `traceparent`
+- Automatic `traceparent` propagation when the OTel HTTPX instrumentation is
+  enabled
 - Environment-based service resolution via `.env`
 
 ### Health Checks
@@ -120,12 +117,22 @@ Want the optional Prometheus metrics adapter too? Add the `metrics` extra:
 fundamentum[metrics] @ git+https://github.com/doguskysilva/fundamentum.git@v0.2.0
 ```
 
+For OpenTelemetry tracing, install the `otel` extra as well:
+
+```
+fundamentum[otel] @ git+https://github.com/doguskysilva/fundamentum.git@v0.2.0
+```
+
 ## Quick Start
 
 ```python
 from fastapi import FastAPI
 from fundamentum.infra.settings import BaseServiceSettings
-from fundamentum.infra.observability import setup_logging, ObservabilityMiddleware
+from fundamentum.infra.observability import (
+    setup_logging,
+    setup_tracing,
+    ObservabilityMiddleware,
+)
 from fundamentum.infra.http import ServiceClient, EndpointRegistry, ServiceEndpoint, HttpMethod
 from fundamentum.infra.settings import ServiceRegistry
 from pydantic import Field, BaseModel
@@ -139,9 +146,10 @@ settings = Settings(service_name="my-service")
 # 2. Setup logging
 logger = setup_logging(settings)
 
-# 3. Create FastAPI app with middleware (adds request tracing and logging)
+# 3. Create FastAPI app with middleware (adds request logging and metrics)
 app = FastAPI()
 app.add_middleware(ObservabilityMiddleware)
+setup_tracing(app, settings)  # requires fundamentum[otel]
 
 # 4. Setup HTTP client
 service_registry = ServiceRegistry(settings)

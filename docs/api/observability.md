@@ -1,214 +1,146 @@
-# Observability Module
+# Observability
 
-Structured logging, request tracking, and middleware.
+Fundamentum provides structured JSON logging, request/response logging, an
+optional metrics recorder, and optional OpenTelemetry tracing for FastAPI
+services.
 
-## Components
-
-- **setup_logging** - Configure structured logging
-- **ObservabilityMiddleware** - FastAPI middleware
-- **Context Functions** - Request/trace ID management
-- **Logging Helpers** - Structured log utilities
-
-## Basic Usage
+## Basic setup
 
 ```python
 from fastapi import FastAPI
+
 from fundamentum.infra.observability import (
-    setup_logging,
     ObservabilityMiddleware,
-    get_logger,
+    setup_logging,
+    setup_tracing,
 )
 
-# Setup logging
 logger = setup_logging(settings)
 
-# Add middleware
 app = FastAPI()
 app.add_middleware(ObservabilityMiddleware)
-
-# Get logger
-logger = get_logger(__name__)
-
-@app.get("/customers/{customer_id}")
-async def get_customer(customer_id: str):
-    logger.info("Fetching customer", extra={"customer_id": customer_id})
-    return {"id": customer_id}
+setup_tracing(app, settings)  # requires fundamentum[otel]
 ```
 
-## Logging
+Call `setup_tracing` once during application startup. It configures a tracer
+provider with an OTLP/HTTP exporter, instruments FastAPI incoming requests and
+HTTPX outgoing requests, and enables log correlation. The exporter reads its
+target and credentials from standard `OTEL_*` environment variables, such as
+`OTEL_EXPORTER_OTLP_ENDPOINT`.
+
+Install tracing support separately when a service opts in:
+
+```bash
+pip install "fundamentum[otel]"
+```
+
+If the extra is not installed, importing Fundamentum still works; calling
+`setup_tracing` raises an actionable `ImportError`.
+
+## Trace context and spans
+
+OpenTelemetry extracts incoming W3C `traceparent` headers and creates a server
+span. The HTTPX instrumentation injects `traceparent` into outgoing calls,
+including calls made through `ServiceClient`, creating child client spans with
+the same trace ID. The span tree and cross-service relationships are therefore
+available in the configured OTLP backend.
+
+The old chained `X-Trace-ID` format and its context helpers are removed. The
+middleware and `ServiceClient` no longer read or emit `X-Trace-ID`; no manual
+trace header code is required.
+
+For non-HTTP boundaries such as queues, use OpenTelemetry's `inject` and
+`extract` APIs to carry context in message headers:
 
 ```python
-from fundamentum.infra.observability import setup_logging, get_logger
+from opentelemetry.propagate import extract, inject
 
-# Setup once at startup
-logger = setup_logging(settings)
-
-# Get logger in modules
-logger = get_logger(__name__)
-
-# Structured logging with context
-logger.info(
-    "Customer created",
-    extra={
-        "customer_id": "123",
-        "email": "john@example.com"
-    }
-)
+headers: dict[str, str] = {}
+inject(headers)
+consumer_context = extract(message.headers)
 ```
 
-## Trace ID (X-Trace-ID)
+## Structured logging
 
-Fundamentum's own scheme: a chained trace ID that grows one segment per hop,
-so the full call graph is reconstructable from the ID alone
-(`UICALL.C32PO.V40PO.A1B2C`). Propagated via the `X-Trace-ID` header.
+`ContextFilter` adds service metadata and the current span identifiers to each
+JSON log record:
 
-```python
-from fundamentum.infra.observability import (
-    get_trace_id,
-    set_trace_id,
-    increment_trace_id,
-    clear_trace_id,
-)
-
-# Increment appends a new random segment to the incoming trace, or starts
-# a fresh one if there is no incoming trace
-incoming = None  # e.g. request.headers.get("X-Trace-ID")
-trace_id = increment_trace_id(incoming)  # "V40PO"
-set_trace_id(trace_id)
-
-# Get current trace (from the context var set above)
-trace_id = get_trace_id()
-
-# Clear (cleanup / tests)
-clear_trace_id()
+```json
+{
+  "service": "orders",
+  "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "span_id": "00f067aa0ba902b7",
+  "message": "order loaded"
+}
 ```
 
-`ObservabilityMiddleware` does this automatically for every request — see
-below.
-
-## W3C traceparent
-
-Alongside `X-Trace-ID`, Fundamentum also propagates a standard
-[W3C `traceparent`](https://www.w3.org/TR/trace-context/) header, so requests
-show up correctly in standard tracing backends (Jaeger, Tempo, etc.) even
-without a full OpenTelemetry SDK integration. Unlike `X-Trace-ID`, the
-trace-id portion stays fixed for the whole call chain — only a fresh
-parent-id (span-id) is generated per hop.
-
-```python
-from fundamentum.infra.observability import (
-    generate_traceparent,
-    get_traceparent,
-    set_traceparent,
-    parse_traceparent,
-)
-
-# Build the outgoing header for this hop, reusing the trace-id from an
-# incoming traceparent if there is one
-incoming = None  # e.g. request.headers.get("traceparent")
-traceparent = generate_traceparent(incoming)
-set_traceparent(traceparent)
-
-# Get current value (from the context var set above)
-traceparent = get_traceparent()
-
-# Parse a raw header into (trace_id, parent_id), or None if malformed
-parse_traceparent("00-" + "a" * 32 + "-" + "b" * 16 + "-01")
-```
+When no span is active, `trace_id` and `span_id` are `null`. This keeps logs
+searchable by the same identifiers shown in the tracing backend.
 
 ## Middleware
 
-The middleware automatically:
-- Extracts/increments `X-Trace-ID` for each request (see Trace ID above)
-- Extracts/generates a `traceparent` header for each request (see W3C
-  traceparent above)
-- Adds both `X-Trace-ID` and `traceparent` to response headers
-- Logs request/response details, including duration
-- Records an inbound request metric via
-  `fundamentum.infra.observability.metrics` (no-op unless a recorder is
-  installed — see Metrics below)
+`ObservabilityMiddleware` logs incoming requests, responses, and errors and
+records an inbound request metric. It does not create or mutate trace headers;
+that responsibility belongs to OpenTelemetry's FastAPI instrumentation.
 
 ```python
-from fastapi import FastAPI
-from fundamentum.infra.observability import ObservabilityMiddleware
-
-app = FastAPI()
 app.add_middleware(ObservabilityMiddleware)
 ```
 
-## Logging Helpers
+The middleware recognizes `X-Service-Name` for peer-service attribution. The
+HTTP client keeps sending that caller-identification header when configured.
+
+## Logging helpers
 
 ```python
 from fundamentum.infra.observability import (
+    get_logger,
     log_http_request,
     log_http_response,
-    get_logger,
 )
 
 logger = get_logger(__name__)
-
-# Log outgoing HTTP request
 log_http_request(
     logger,
     url_name="census.get_customer",
     peer_service="census",
     url="https://census.test/api/customers/123",
-    method="GET",
 )
-
-# Log HTTP response
 log_http_response(
     logger,
     url_name="census.get_customer",
     peer_service="census",
     status_code=200,
-    method="GET",
-    duration_ms=150,
-    url="https://census.test/api/customers/123",
 )
 ```
 
 ## Metrics
 
-`infra.observability.metrics` exposes the request duration the middleware
-and `ServiceClient` already compute, via a pluggable recorder. By default
-nothing is recorded.
+`infra.observability.metrics` exposes request duration through a pluggable
+recorder. By default nothing is recorded. The optional Prometheus adapter
+requires `fundamentum[metrics]`.
 
 ```python
 from fundamentum.infra.observability.metrics import set_metrics_recorder
-
-# Requires the `metrics` extra: fundamentum[metrics]
 from fundamentum.infra.observability.prometheus import PrometheusMetricsRecorder
 
 set_metrics_recorder(PrometheusMetricsRecorder())
 ```
 
-Bring your own recorder by implementing `MetricsRecorder.record_request(...)`
-— see `docs/api/testing.md` for how tests typically stub it out.
+## API reference
 
-## API Reference
+Functions:
 
-**Functions:**
-- `setup_logging(settings) -> Logger` - Configure structured logging
-- `get_logger(name) -> Logger` - Get logger with context
-- `get_trace_id() -> str | None` - Current X-Trace-ID
-- `set_trace_id(trace_id: str)` - Set X-Trace-ID
-- `increment_trace_id(incoming, segment=None) -> str` - Append a segment to a trace ID
-- `append_trace_segment(trace_id, segment=None) -> str` - Append a segment to a trace ID
-- `generate_trace_segment() -> str` - Generate a random 5-char segment
-- `clear_trace_id()` - Clear X-Trace-ID
-- `get_traceparent() -> str | None` - Current W3C traceparent
-- `set_traceparent(traceparent: str)` - Set W3C traceparent
-- `generate_traceparent(incoming=None) -> str` - Build the outgoing traceparent for this hop
-- `parse_traceparent(header: str) -> tuple[str, str] | None` - Parse into (trace_id, parent_id)
-- `clear_traceparent()` - Clear traceparent
-- `set_metrics_recorder(recorder)` / `get_metrics_recorder()` - Install/read the active `MetricsRecorder`
-- `record_request(...)` - Forward a request event to the installed recorder
+- `setup_logging(settings) -> Logger`
+- `setup_tracing(app, settings) -> None` (requires `fundamentum[otel]`)
+- `get_logger(name) -> Logger`
+- `set_metrics_recorder(recorder)` / `get_metrics_recorder()`
+- `record_request(...)`
 
-**Classes:**
-- `ObservabilityMiddleware` - FastAPI/Starlette middleware
-- `StructuredFormatter` - JSON log formatter
-- `ContextFilter` - Adds trace context to logs
-- `MetricsRecorder` (Protocol) / `NoopMetricsRecorder` - Pluggable metrics sink
-- `PrometheusMetricsRecorder` (in `infra.observability.prometheus`, requires
-  the `metrics` extra) - Publishes to the default Prometheus registry
+Classes:
+
+- `ObservabilityMiddleware`
+- `StructuredFormatter`
+- `ContextFilter`
+- `MetricsRecorder` / `NoopMetricsRecorder`
+- `PrometheusMetricsRecorder` (requires `fundamentum[metrics]`)

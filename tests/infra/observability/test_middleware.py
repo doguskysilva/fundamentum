@@ -1,42 +1,5 @@
 """Targeted synchronous tests for observability middleware helpers."""
 
-from fundamentum.infra.observability.context import (
-    clear_trace_id,
-    get_trace_id,
-    increment_trace_id,
-    set_trace_id,
-)
-
-
-class TestTraceIdInMiddleware:
-    """Essential trace ID handling scenarios."""
-
-    def teardown_method(self) -> None:
-        clear_trace_id()
-
-    def test_increment_creates_segment_when_missing(self) -> None:
-        new_trace = increment_trace_id(None)
-
-        assert new_trace is not None
-        assert len(new_trace.split(".")) == 1
-
-    def test_increment_appends_to_existing_trace(self) -> None:
-        base_trace = "UICALL.C32PO"
-        new_trace = increment_trace_id(base_trace)
-
-        assert new_trace.startswith(f"{base_trace}.")
-        assert len(new_trace.split(".")) == 3
-
-    def test_trace_id_propagates_across_services(self) -> None:
-        upstream = increment_trace_id("UICALL.START")
-        set_trace_id(upstream)
-
-        downstream = increment_trace_id(get_trace_id())
-        set_trace_id(downstream)
-
-        assert get_trace_id().startswith(f"{upstream}.")
-        assert len(get_trace_id().split(".")) == 4
-
 
 class TestMiddlewareLoggingStructure:
     """Minimal structure validation for middleware logs."""

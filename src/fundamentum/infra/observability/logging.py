@@ -10,8 +10,20 @@ from typing import Any
 
 from pythonjsonlogger.json import JsonFormatter
 
-from fundamentum.infra.observability.context import get_trace_id
 from fundamentum.infra.settings.protocols import SettingsProtocol
+
+
+def _get_otel_context() -> tuple[str | None, str | None]:
+    """Return current OTel trace/span IDs without making OTel mandatory."""
+    try:
+        from opentelemetry import trace
+    except ImportError:
+        return None, None
+
+    context = trace.get_current_span().get_span_context()
+    if not context.is_valid:
+        return None, None
+    return format(context.trace_id, "032x"), format(context.span_id, "016x")
 
 
 class ContextFilter(logging.Filter):
@@ -21,7 +33,8 @@ class ContextFilter(logging.Filter):
     - service_name: Name of the microservice
     - environment: Deployment environment
     - version: Service version
-    - trace_id: Current trace ID from context (if available)
+    - trace_id: Current OTel trace ID (if available)
+    - span_id: Current OTel span ID (if available)
     """
 
     def __init__(self, settings: SettingsProtocol):
@@ -45,7 +58,7 @@ class ContextFilter(logging.Filter):
         record.service_name = self.settings.service_name
         record.environment = self.settings.environment
         record.version = self.settings.service_version
-        record.trace_id = get_trace_id()
+        record.trace_id, record.span_id = _get_otel_context()
         return True
 
 
@@ -56,7 +69,8 @@ class StructuredFormatter(JsonFormatter):
     Supports the following structure:
     - level: Log level (INFO, ERROR, etc.)
     - logger: Name of the logger (file calling the log)
-    - trace_id: Trace ID for request tracking
+    - trace_id: OTel trace ID for request tracking
+    - span_id: OTel span ID for request tracking
     - data: Dictionary containing implementation-specific details
     """
 
@@ -88,6 +102,12 @@ class StructuredFormatter(JsonFormatter):
 
         if hasattr(record, "environment"):
             log_record["environment"] = record.environment
+
+        if hasattr(record, "trace_id"):
+            log_record["trace_id"] = record.trace_id
+
+        if hasattr(record, "span_id"):
+            log_record["span_id"] = record.span_id
 
         # Extract data field from extra if present
         if hasattr(record, "data") and record.data:
@@ -127,7 +147,7 @@ def setup_logging(settings: SettingsProtocol) -> logging.Logger:
     formatter: logging.Formatter
     if settings.enable_json_logging:
         formatter = StructuredFormatter(
-            "%(asctime)s %(levelname)s %(name)s %(trace_id)s %(message)s"
+            "%(asctime)s %(levelname)s %(name)s %(trace_id)s %(span_id)s %(message)s"
         )
     else:
         formatter = logging.Formatter(

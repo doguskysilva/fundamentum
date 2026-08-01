@@ -18,7 +18,6 @@ from fundamentum.infra.http.models import (
     UnresolvedPathParameterError,
 )
 from fundamentum.infra.http.registry import EndpointRegistry
-from fundamentum.infra.observability.context import get_trace_id, get_traceparent
 from fundamentum.infra.observability.helpers import (
     log_http_error,
     log_http_request,
@@ -48,8 +47,8 @@ class ServiceClient:
 
     Features:
     - Automatic service URL resolution
-    - Request ID propagation for distributed tracing (X-Trace-ID and W3C
-      traceparent)
+    - W3C Trace Context propagation through optional OpenTelemetry
+      instrumentation
     - Retry with exponential backoff + jitter for idempotent methods, on
       connection errors, timeouts, and 5xx responses
     - Comprehensive error handling and logging
@@ -157,7 +156,7 @@ class ServiceClient:
         return f"{base_url}{path}"
 
     def _build_headers(self) -> dict[str, str]:
-        """Build request headers with tracing information.
+        """Build request headers for an inter-service request.
 
         Returns:
             Dictionary of HTTP headers
@@ -166,14 +165,6 @@ class ServiceClient:
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
-
-        trace_id = get_trace_id()
-        if trace_id:
-            headers["X-Trace-ID"] = trace_id
-
-        traceparent = get_traceparent()
-        if traceparent:
-            headers["traceparent"] = traceparent
 
         if self.service_name:
             headers["X-Service-Name"] = self.service_name

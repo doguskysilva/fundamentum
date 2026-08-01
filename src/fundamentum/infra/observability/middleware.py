@@ -1,8 +1,4 @@
-"""Observability middleware and utilities for request tracking and monitoring.
-
-This module provides FastAPI middleware for request tracing, logging,
-and observability across microservices.
-"""
+"""Observability middleware for request logging and monitoring."""
 
 import logging
 import time
@@ -11,12 +7,6 @@ from collections.abc import Awaitable, Callable
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from fundamentum.infra.observability.context import (
-    generate_traceparent,
-    increment_trace_id,
-    set_trace_id,
-    set_traceparent,
-)
 from fundamentum.infra.observability.helpers import (
     log_service_error,
     log_service_request,
@@ -28,30 +18,14 @@ logger = logging.getLogger(__name__)
 
 
 class ObservabilityMiddleware(BaseHTTPMiddleware):
-    """Middleware for request tracking, logging, and observability.
+    """Middleware for request logging, metrics, and observability.
 
     Features:
-    - Generates or increments trace IDs from headers
     - Logs all incoming requests with duration and status
-    - Propagates trace ID through context variables
-    - Adds trace ID to response headers
-    - Mirrors the same hop as a W3C traceparent header for interop with
-      standard tracing backends
+    - Records inbound request metrics
 
-    The middleware automatically:
-    - Extracts X-Trace-ID from headers and appends a new segment
-    - If no X-Trace-ID exists, creates a new trace with generated segment
-    - Stores trace ID in context variable for use in logging
-    - Extracts/generates a traceparent header the same way (see
-      `fundamentum.infra.observability.context.generate_traceparent`)
-    - Logs request completion with method, path, status, and duration
-    - Adds X-Trace-ID and traceparent to response headers for tracing
-
-    Trace ID Flow:
-    - UI calls service: 'UICALL.C32PO'
-    - Service increments: 'UICALL.C32PO.V40PO'
-    - Service calls another: sends 'UICALL.C32PO.V40PO'
-    - Next service increments: 'UICALL.C32PO.V40PO.A1B2C'
+    OpenTelemetry's FastAPI instrumentation is responsible for extracting
+    and creating W3C Trace Context spans when ``setup_tracing`` is enabled.
     """
 
     def __init__(
@@ -68,28 +42,16 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
     async def dispatch(
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        """Process request and add observability information.
+        """Process a request and record observability information.
 
         Args:
             request: Incoming HTTP request
             call_next: Next middleware or route handler
 
         Returns:
-            HTTP response with added observability headers
+            HTTP response from the downstream application
         """
         start_time = time.time()
-
-        # Extract incoming trace ID and increment it with a new segment
-        incoming_trace_id = request.headers.get("X-Trace-ID")
-        trace_id = increment_trace_id(incoming_trace_id)
-        set_trace_id(trace_id)
-
-        # Mirror the same hop onto a W3C traceparent so this request also
-        # shows up correctly in standard tracing backends (Jaeger, Tempo,
-        # etc.), independent of the homegrown X-Trace-ID chain above.
-        incoming_traceparent = request.headers.get("traceparent")
-        traceparent = generate_traceparent(incoming_traceparent)
-        set_traceparent(traceparent)
 
         # Extract peer service from header or use "unknown"
         peer_service = request.headers.get("X-Service-Name", "unknown")
@@ -145,8 +107,3 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
                 duration_ms=duration_ms,
                 direction="inbound",
             )
-
-            # Add trace headers to the response if it exists
-            if response is not None:
-                response.headers["X-Trace-ID"] = trace_id
-                response.headers["traceparent"] = traceparent

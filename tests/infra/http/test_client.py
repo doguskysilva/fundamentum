@@ -19,7 +19,6 @@ from fundamentum.infra.http.models import (
     UnresolvedPathParameterError,
 )
 from fundamentum.infra.http.registry import EndpointRegistry
-from fundamentum.infra.observability.context import clear_trace_id, set_trace_id
 from fundamentum.infra.observability.metrics import get_metrics_recorder, set_metrics_recorder
 from fundamentum.infra.settings.registry import ServiceRegistry
 
@@ -46,13 +45,6 @@ def service_registry():
 @pytest.fixture
 def endpoint_registry():
     return EndpointRegistry()
-
-
-@pytest.fixture(autouse=True)
-def reset_trace_context():
-    clear_trace_id()
-    yield
-    clear_trace_id()
 
 
 @pytest.fixture(autouse=True)
@@ -161,13 +153,13 @@ def test_build_url_raises_on_unresolved_path_param(service_registry, endpoint_re
         client._build_url(endpoint, None)
 
 
-def test_build_headers_includes_trace_id(service_registry, endpoint_registry):
+def test_build_headers_does_not_add_legacy_trace_id(service_registry, endpoint_registry):
     client = build_client(service_registry, endpoint_registry, ScriptedTransport([]))
-    set_trace_id("ROOT.ABCD1")
 
     headers = client._build_headers()
 
-    assert headers["X-Trace-ID"] == "ROOT.ABCD1"
+    assert "X-Trace-ID" not in headers
+    assert "traceparent" not in headers
 
 
 def test_build_headers_includes_service_name_when_provided(service_registry, endpoint_registry):

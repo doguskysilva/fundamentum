@@ -3,7 +3,6 @@
 import logging
 import sys
 
-from fundamentum.infra.observability.context import clear_trace_id, set_trace_id
 from fundamentum.infra.observability.logging import (
     ContextFilter,
     StructuredFormatter,
@@ -64,36 +63,10 @@ class TestContextFilter:
         assert record.environment == "production"
         assert record.version == "2.0.0"
 
-    def test_context_filter_adds_trace_id(self):
-        """Test that filter adds trace ID from context."""
+    def test_context_filter_adds_empty_otel_context_without_active_span(self):
+        """Test that filter handles the absence of an active OTel span."""
         settings = MockSettings()
         filter = ContextFilter(settings)
-
-        # Set trace ID in context
-        set_trace_id("UICALL.C32PO.V40PO")
-
-        record = logging.LogRecord(
-            name="test",
-            level=logging.INFO,
-            pathname="test.py",
-            lineno=1,
-            msg="test message",
-            args=(),
-            exc_info=None,
-        )
-
-        filter.filter(record)
-
-        assert record.trace_id == "UICALL.C32PO.V40PO"
-
-        clear_trace_id()
-
-    def test_context_filter_trace_id_none(self):
-        """Test that filter handles None trace ID."""
-        settings = MockSettings()
-        filter = ContextFilter(settings)
-
-        clear_trace_id()
 
         record = logging.LogRecord(
             name="test",
@@ -108,6 +81,27 @@ class TestContextFilter:
         filter.filter(record)
 
         assert record.trace_id is None
+        assert record.span_id is None
+
+    def test_context_filter_trace_id_none(self):
+        """Test that filter handles None trace ID."""
+        settings = MockSettings()
+        filter = ContextFilter(settings)
+
+        record = logging.LogRecord(
+            name="test",
+            level=logging.INFO,
+            pathname="test.py",
+            lineno=1,
+            msg="test message",
+            args=(),
+            exc_info=None,
+        )
+
+        filter.filter(record)
+
+        assert record.trace_id is None
+        assert record.span_id is None
 
     def test_context_filter_always_returns_true(self):
         """Test that filter always returns True to allow logging."""
@@ -421,21 +415,14 @@ class TestLoggingIntegration:
         """Clean up after each test."""
         logger = logging.getLogger()
         logger.handlers.clear()
-        clear_trace_id()
 
-    def test_full_logging_setup_with_trace_id(self):
-        """Test complete logging setup with trace ID."""
+    def test_full_logging_setup_without_otel_span(self):
+        """Test complete logging setup without an active OTel span."""
         settings = MockSettings(enable_json_logging=True)
         root_logger = setup_logging(settings)
 
-        # Set trace ID
-        set_trace_id("UICALL.C32PO.V40PO")
-
         # Verify logger is configured
         assert len(root_logger.handlers) == 1
-
-        # Clean up
-        clear_trace_id()
 
     def test_logging_with_data_field(self):
         """Test logging with structured data field."""
@@ -458,8 +445,6 @@ class TestLoggingIntegration:
             enable_json_logging=True,
         )
         setup_logging(settings)
-        set_trace_id("TEST.12345")
-
         # Create a record manually to test filter + formatter
         record = logging.LogRecord(
             name="integration",
@@ -478,7 +463,8 @@ class TestLoggingIntegration:
 
         # Verify context was added
         assert record.service_name == "integration-test"
-        assert record.trace_id == "TEST.12345"
+        assert record.trace_id is None
+        assert record.span_id is None
 
         # Apply formatter
         formatter = handler.formatter
@@ -488,5 +474,3 @@ class TestLoggingIntegration:
         # Verify formatting
         assert log_record["level"] == "INFO"
         assert log_record["logger"] == "integration"
-
-        clear_trace_id()

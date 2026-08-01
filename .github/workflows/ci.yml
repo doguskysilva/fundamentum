@@ -67,7 +67,7 @@ jobs:
           python-version: "3.14"
 
       - name: Install dependencies
-        run: uv sync --frozen
+        run: uv sync --frozen --extra otel
 
       - name: Run tests
         run: uv run pytest --cov=src/fundamentum --cov-report=term-missing --cov-fail-under=90
