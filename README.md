@@ -1,44 +1,69 @@
 # Fundamentum
 
-Fundamentum is a shared Python package that provides infrastructure primitives for a microservices ecosystem.
+Fundamentum is a shared Python package that provides infrastructure primitives
+for a microservices ecosystem.
 
-It exists to centralize cross-cutting concerns such as observability and internal service communication, while explicitly avoiding domain coupling.
+It exists to centralize cross-cutting concerns such as observability and
+internal service communication, while explicitly avoiding domain coupling.
 
-The goal is consistency without overengineering.
----
+*The goal is consistency without overengineering.*
+
+## About the name
+
+*Fundamentum* is the Latin word for a foundation or groundwork — the base on
+which a structure rests. That's the role this package plays in the ecosystem:
+it isn't a service itself, but the common ground the services are built on.
+Officina, Exemplar, Cursus, and the rest all stand on the same *Fundamentum*.
+
 ## Purpose
 
-Fundamentum is designed to be used by multiple Python microservices (FastAPI-based) to avoid code duplication while preserving service autonomy.
+Fundamentum is designed to be used by multiple Python microservices
+(FastAPI-based) to avoid code duplication while preserving service autonomy.
 
 It provides:
 
 - Structured logging
 - Request correlation
-- Minimal distributed tracing (via headers)
+- Minimal distributed tracing (header propagation — see the note below)
 - A generic internal HTTP client
 - Explicit service integration contracts
-- It does not contain business logic or domain models.
 
+It contains no business logic and no domain models — see
+[What Fundamentum Does NOT Provide](#what-fundamentum-does-not-provide).
+
+## Requirements
+
+- Python 3.12+
+- FastAPI / Pydantic
+
+The project uses [`uv`](https://github.com/astral-sh/uv) for dependency
+management and [`ruff`](https://github.com/astral-sh/ruff) for linting. If
+you're contributing, install `uv` and run `uv sync` to set up the environment.
 
 ## What Fundamentum Provides
+
 ### Observability
 
-- request_id propagation using contextvars
+- `request_id` propagation using `contextvars`
 - FastAPI middleware for request tracing
 - JSON logging to stdout
 - Automatic injection of:
- - service name
- - environment
- - version
- - request_id
+  - service name
+  - environment
+  - version
+  - request_id
+
+> **Note on tracing:** tracing here means propagating a correlation header
+> (`X-Request-ID`) across service calls, not emitting spans. There is no
+> OpenTelemetry integration today — this is deliberately minimal.
 
 ### Internal HTTP Communication
 
-- ServiceEndpoint contract definition
-- Generic ServiceClient
-- Automatic propagation of X-Request-ID
-- Environment-based service resolution via .env
----
+- `ServiceEndpoint` contract definition
+- Generic `ServiceClient`
+- Automatic propagation of `X-Request-ID`
+- Environment-based service resolution via `.env`
+
 ## What Fundamentum Does NOT Provide
 
 - No domain models
@@ -57,13 +82,18 @@ Each microservice remains responsible for:
 
 ## Installation
 
-Used as a Git dependency:
-```toml
+Used as a Git dependency (pin to a published tag):
+
+```
 fundamentum @ git+https://github.com/doguskysilva/fundamentum.git@v0.1.0
 ```
 
+> If no release has been tagged yet, point at `@main` instead of `@v0.1.0`
+> until the first version is published, otherwise the install will fail.
+
 Or install locally for development:
-```bash
+
+```
 pip install -e /path/to/fundamentum
 ```
 
@@ -122,10 +152,16 @@ async def get_customer(customer_id: str):
 
 ## Documentation
 
-For detailed documentation, see the [docs/](docs/) directory:
+For detailed documentation, see the [docs/](docs) directory:
 
-- **[Quick Setup Guide](docs/README.md)** - Getting started
-- **[HTTP Module](docs/api/http.md)** - Inter-service communication
-- **[Settings Module](docs/api/settings.md)** - Configuration management
-- **[Observability Module](docs/api/observability.md)** - Logging and tracing
-- **[Testing Module](docs/api/testing.md)** - Testing utilities
+- **[Quick Setup Guide](docs/README.md)** — Getting started
+- **[HTTP Module](docs/api/http.md)** — Inter-service communication
+- **[Settings Module](docs/api/settings.md)** — Configuration management
+- **[Observability Module](docs/api/observability.md)** — Logging and tracing
+- **[Testing Module](docs/api/testing.md)** — Testing utilities
+
+## License
+
+<!-- Add a LICENSE file and reference it here. Without one, the default is
+     "all rights reserved", which may not be what you want for a shared
+     internal package. -->
