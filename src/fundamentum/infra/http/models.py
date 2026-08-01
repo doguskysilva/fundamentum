@@ -96,3 +96,21 @@ class ServiceUnavailableError(ServiceError):
         status_code: int | None = None,
     ):
         super().__init__(message, endpoint=endpoint, status_code=status_code)
+
+
+class RequestValidationError(ServiceError):
+    """Exception raised when a request body doesn't match the endpoint's declared request_model."""
+
+    def __init__(self, message: str, endpoint: str | None = None):
+        super().__init__(message, endpoint=endpoint)
+
+
+class UnresolvedPathParameterError(ServiceError):
+    """Exception raised when an endpoint path still has {placeholders} after substitution.
+
+    A path with a missing parameter can never resolve to a valid request, so
+    this is raised eagerly instead of letting a malformed URL reach the wire.
+    """
+
+    def __init__(self, message: str, endpoint: str | None = None):
+        super().__init__(message, endpoint=endpoint)
