@@ -4,16 +4,24 @@ target-version = "py314"
 
 [lint]
 select = [
-  "E",    # pycodestyle (erros)
-  "F",    # pyflakes
-  "I",    # isort
-  "B",    # flake8-bugbear
-  "UP",   # pyupgrade
-  "TID",  # tidy imports (import boundaries)
+  "E",     # pycodestyle (erros)
+  "F",     # pyflakes
+  "I",     # isort
+  "B",     # flake8-bugbear
+  "UP",    # pyupgrade
+  "TID",   # tidy imports (import boundaries)
+  "ASYNC", # async-specific bugs (blocking calls, await misuse)
+  "PT",    # pytest style
+  "SIM",   # flake8-simplify
+  "RUF",   # ruff-specific rules
 ]
 
 ignore = [
-  "E501", # line length (já controlado acima)
+  "E501",   # line length (já controlado acima)
+  # __all__ lists in the infra/*/__init__.py aggregator modules are grouped
+  # by concept (client, exceptions, registry, ...) with comment headers, not
+  # alphabetized — that grouping is more useful to readers than sort order.
+  "RUF022",
 ]
 
 [lint.isort]
