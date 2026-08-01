@@ -21,9 +21,7 @@ def registry(basic_settings):
 
 
 class TestServiceRegistry:
-
     def test_list_all_registered_services(self):
-
         class TestSettings(BaseSettings):
             service_a_base_url: str = "http://service-a.local"
             service_b_base_url: str = "http://service-b.local"

@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 class ServiceClient:
     """Async HTTP client for inter-service communication.
-    
+
     Features:
     - Automatic service URL resolution
     - Request ID propagation for distributed tracing
@@ -36,7 +36,7 @@ class ServiceClient:
     - Request/response validation with Pydantic models
     - Timeout management
     """
-    
+
     def __init__(
         self,
         service_registry: ServiceRegistry,
@@ -47,7 +47,7 @@ class ServiceClient:
         transport: httpx.AsyncBaseTransport | None = None,
     ):
         """Initialize the service client.
-        
+
         Args:
             service_registry: Registry for resolving service base URLs
             endpoint_registry: Registry for endpoint definitions
@@ -63,22 +63,20 @@ class ServiceClient:
         self._transport = transport
 
     def _build_url(
-        self, 
-        endpoint: ServiceEndpoint, 
-        path_params: dict[str, Any] | None = None
+        self, endpoint: ServiceEndpoint, path_params: dict[str, Any] | None = None
     ) -> str:
         """Build full URL from endpoint and path parameters.
-        
+
         Args:
             endpoint: Service endpoint definition
             path_params: Path parameters to replace in URL
-            
+
         Returns:
             Complete URL with base URL and resolved path parameters
         """
         base_url = self.service_registry.get_base_url(endpoint.service)
         path = endpoint.path
-        
+
         # Replace path parameters
         if path_params:
             for key, value in path_params.items():
@@ -86,22 +84,19 @@ class ServiceClient:
                 if placeholder not in path:
                     logger.warning(
                         f"Path parameter '{key}' not found in endpoint path",
-                        extra={"path": path, "params": path_params}
+                        extra={"path": path, "params": path_params},
                     )
                 path = path.replace(placeholder, str(value))
-        
+
         # Check for unreplaced parameters
         if "{" in path and "}" in path:
-            logger.warning(
-                "Endpoint path contains unreplaced parameters",
-                extra={"path": path}
-            )
-        
+            logger.warning("Endpoint path contains unreplaced parameters", extra={"path": path})
+
         return f"{base_url}{path}"
-    
+
     def _build_headers(self) -> dict[str, str]:
         """Build request headers with tracing information.
-        
+
         Returns:
             Dictionary of HTTP headers
         """
@@ -109,18 +104,18 @@ class ServiceClient:
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
-        
+
         # Add trace ID for distributed tracing (pass current trace, don't increment)
         trace_id = get_trace_id()
         if trace_id:
             headers["X-Trace-ID"] = trace_id
-        
+
         # Add service name to identify the caller
         if self.service_name:
             headers["X-Service-Name"] = self.service_name
-        
+
         return headers
-    
+
     async def request(
         self,
         endpoint_key: str,
@@ -129,16 +124,16 @@ class ServiceClient:
         body: BaseModel | None = None,
     ) -> Any:
         """Make an HTTP request to a service endpoint.
-        
+
         Args:
             endpoint_key: Endpoint identifier in the registry
             path_params: Path parameters to replace in URL
             query_params: Query string parameters
             body: Request body (Pydantic model)
-            
+
         Returns:
             Validated response data (Pydantic model instance)
-            
+
         Raises:
             KeyError: If endpoint_key is not found in registry
             ServiceNotFoundError: If resource is not found (404)
@@ -149,17 +144,17 @@ class ServiceClient:
         """
         # Get endpoint definition
         endpoint = self.endpoint_registry.get(endpoint_key)
-        
+
         # Build URL and headers
         url = self._build_url(endpoint, path_params)
         headers = self._build_headers()
-        
+
         # Use endpoint-specific timeout if available
         timeout = endpoint.timeout if endpoint.timeout is not None else self.timeout
-        
+
         # Prepare request body
         json_body = body.model_dump() if body else None
-        
+
         # Validate request body matches expected model
         if body and endpoint.request_model:
             if not isinstance(body, endpoint.request_model):
@@ -167,7 +162,7 @@ class ServiceClient:
                     f"Request body type {type(body)} doesn't match "
                     f"expected type {endpoint.request_model}"
                 )
-        
+
         # Log outgoing request with structured data
         log_http_request(
             logger,
@@ -176,9 +171,9 @@ class ServiceClient:
             url=url,
             method=endpoint.method.value,
         )
-        
+
         start_time = time.time()
-        
+
         try:
             async with httpx.AsyncClient(timeout=timeout, transport=self._transport) as client:
                 # Make request based on HTTP method
@@ -200,7 +195,7 @@ class ServiceClient:
                     )
                 else:
                     raise ValueError(f"Unsupported HTTP method: {endpoint.method}")
-                
+
                 # Handle 404 specially
                 if response.status_code == 404:
                     log_http_error(
@@ -217,7 +212,7 @@ class ServiceClient:
                         f"Resource not found at {url}",
                         endpoint=endpoint_key,
                     )
-                
+
                 # Handle 5xx errors
                 if response.status_code >= 500:
                     log_http_error(
@@ -235,10 +230,10 @@ class ServiceClient:
                         endpoint=endpoint_key,
                         status_code=response.status_code,
                     )
-                
+
                 # Raise for other HTTP errors
                 response.raise_for_status()
-                
+
                 # Log successful response
                 duration_ms = int((time.time() - start_time) * 1000)
                 log_http_response(
@@ -250,16 +245,14 @@ class ServiceClient:
                     duration_ms=duration_ms,
                     url=url,
                 )
-                
+
                 # Parse and validate response
                 if response.content:
                     response_data = response.json()
-                    
+
                     # Validate against response model
                     try:
-                        validated_response = endpoint.response_model.model_validate(
-                            response_data
-                        )
+                        validated_response = endpoint.response_model.model_validate(response_data)
                         return validated_response
                     except ValidationError as e:
                         log_http_error(
@@ -273,9 +266,9 @@ class ServiceClient:
                             url=url,
                         )
                         raise
-                
+
                 return None
-                
+
         except httpx.TimeoutException as e:
             log_http_error(
                 logger,
@@ -291,7 +284,7 @@ class ServiceClient:
                 f"Request to {url} timed out after {timeout}s",
                 endpoint=endpoint_key,
             ) from e
-            
+
         except httpx.HTTPStatusError as e:
             log_http_error(
                 logger,
@@ -327,7 +320,7 @@ class ServiceClient:
                 f"Request failed: {str(e)}",
                 endpoint=endpoint_key,
             ) from e
-    
+
     async def get(
         self,
         endpoint_key: str,
@@ -335,12 +328,12 @@ class ServiceClient:
         query_params: dict[str, Any] | None = None,
     ) -> Any:
         """Make a GET request to a service endpoint.
-        
+
         Args:
             endpoint_key: Endpoint identifier
             path_params: Path parameters to replace in URL
             query_params: Query string parameters
-            
+
         Returns:
             Validated response data
         """
@@ -349,7 +342,7 @@ class ServiceClient:
             path_params=path_params,
             query_params=query_params,
         )
-    
+
     async def post(
         self,
         endpoint_key: str,
@@ -358,13 +351,13 @@ class ServiceClient:
         query_params: dict[str, Any] | None = None,
     ) -> Any:
         """Make a POST request to a service endpoint.
-        
+
         Args:
             endpoint_key: Endpoint identifier
             body: Request body (Pydantic model)
             path_params: Path parameters to replace in URL
             query_params: Query string parameters
-            
+
         Returns:
             Validated response data
         """
@@ -374,7 +367,7 @@ class ServiceClient:
             query_params=query_params,
             body=body,
         )
-    
+
     async def put(
         self,
         endpoint_key: str,
@@ -383,13 +376,13 @@ class ServiceClient:
         query_params: dict[str, Any] | None = None,
     ) -> Any:
         """Make a PUT request to a service endpoint.
-        
+
         Args:
             endpoint_key: Endpoint identifier
             body: Request body (Pydantic model)
             path_params: Path parameters to replace in URL
             query_params: Query string parameters
-            
+
         Returns:
             Validated response data
         """
@@ -399,7 +392,7 @@ class ServiceClient:
             query_params=query_params,
             body=body,
         )
-    
+
     async def delete(
         self,
         endpoint_key: str,
@@ -407,12 +400,12 @@ class ServiceClient:
         query_params: dict[str, Any] | None = None,
     ) -> Any:
         """Make a DELETE request to a service endpoint.
-        
+
         Args:
             endpoint_key: Endpoint identifier
             path_params: Path parameters to replace in URL
             query_params: Query string parameters
-            
+
         Returns:
             Validated response data
         """

@@ -3,7 +3,7 @@ from fundamentum.infra.settings import BaseServiceSettings
 
 def test_base_service_settings_default_values():
     settings = BaseServiceSettings(service_name="test-service")
-    
+
     assert settings.service_name == "test-service"
     assert settings.service_version == "dev"
     assert settings.environment == "development"
@@ -11,6 +11,7 @@ def test_base_service_settings_default_values():
     assert settings.enable_json_logging is True
     assert settings.http_retry_attempts == 3
     assert settings.http_timeout == 10.0
+
 
 def test_base_service_settings_custom_values():
     settings = BaseServiceSettings(
@@ -22,7 +23,7 @@ def test_base_service_settings_custom_values():
         http_retry_attempts=5,
         http_timeout=15.0,
     )
-    
+
     assert settings.service_name == "custom-service"
     assert settings.service_version == "v1.2.3"
     assert settings.environment == "production"

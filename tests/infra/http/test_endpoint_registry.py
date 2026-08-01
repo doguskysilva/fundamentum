@@ -23,7 +23,6 @@ def census_endpoint():
 
 @pytest.fixture
 def hermes_endpoint():
-    
     return ServiceEndpoint(
         service="hermes",
         path="/api/orders/{order_id}",
@@ -50,9 +49,7 @@ class TestEndpointRegistry:
             registry.register("census.customer_by_id", census_endpoint)
 
     def test_get_nonexistent_endpoint_raises_error(self, registry):
-        with pytest.raises(
-            KeyError, match="Endpoint 'nonexistent.endpoint' not found"
-        ):
+        with pytest.raises(KeyError, match="Endpoint 'nonexistent.endpoint' not found"):
             registry.get("nonexistent.endpoint")
 
     def test_has_endpoint(self, registry, census_endpoint):
@@ -105,11 +102,9 @@ class TestEndpointRegistry:
 
         registry.unregister("census.customer_by_id")
         assert not registry.has("census.customer_by_id")
-    
+
     def test_unregister_nonexistent_endpoint_raises_error(self, registry):
-        with pytest.raises(
-            KeyError, match="Endpoint 'nonexistent.endpoint' not found"
-        ):
+        with pytest.raises(KeyError, match="Endpoint 'nonexistent.endpoint' not found"):
             registry.unregister("nonexistent.endpoint")
 
     def test_clear_registry(self, registry, census_endpoint, hermes_endpoint):

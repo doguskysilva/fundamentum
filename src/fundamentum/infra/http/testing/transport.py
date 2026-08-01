@@ -36,9 +36,7 @@ class MockHttpTransport:
         def dispatch(request: httpx.Request) -> httpx.Response:
             key = (request.method, str(request.url))
             if key not in self._handlers:
-                raise RuntimeError(
-                    f"No mock registered for {request.method} {request.url}"
-                )
+                raise RuntimeError(f"No mock registered for {request.method} {request.url}")
             return self._handlers[key](request)
 
         return httpx.MockTransport(dispatch)

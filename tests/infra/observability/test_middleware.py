@@ -13,7 +13,7 @@ class TestTraceIdInMiddleware:
 
     def teardown_method(self) -> None:
         clear_trace_id()
-    
+
     def test_increment_creates_segment_when_missing(self) -> None:
         new_trace = increment_trace_id(None)
 
