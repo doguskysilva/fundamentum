@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/doguskysilva/fundamentum/compare/v0.4.0...v0.4.1) (2026-08-01)
+
+
+### Bug Fixes
+
+* **observability:** log 4xx as warning, not error ([ef0071c](https://github.com/doguskysilva/fundamentum/commit/ef0071c773cc0372a05088d5544018199e77b3ce))
+
 ## [0.4.0](https://github.com/doguskysilva/fundamentum/compare/v0.3.0...v0.4.0) (2026-08-01)
 
 
