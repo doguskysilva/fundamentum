@@ -1,0 +1,27 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write        # create tags, releases, and the changelog commit
+  pull-requests: write   # open/update the release PR
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      # No publish step needed: Fundamentum is consumed as a git dependency,
+      # so the tag + GitHub Release created above are the "release". Services
+      # pin it via `fundamentum @ git+https://.../fundamentum.git@vX.Y.Z`.
+      #
+      # If you ever publish to PyPI, add steps here gated on the release output:
+      #   if: ${{ steps.release.outputs.release_created }}
+      # (give the step above `id: release` to read that output).

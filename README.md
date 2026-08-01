@@ -1,5 +1,7 @@
 # Fundamentum
 
+[![CI](https://github.com/doguskysilva/fundamentum/actions/workflows/ci.yml/badge.svg)](https://github.com/doguskysilva/fundamentum/actions/workflows/ci.yml)
+
 Fundamentum is a shared Python package that provides infrastructure primitives
 for a microservices ecosystem.
 
