@@ -68,7 +68,7 @@ def test_service_endpoint_accepts_list_response_model():
 
 
 @pytest.mark.parametrize(
-    "field,value,expected_message",
+    ("field", "value", "expected_message"),
     [
         ("service", "", "service cannot be empty"),
         ("path", "", "path cannot be empty"),

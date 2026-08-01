@@ -1,28 +1,46 @@
+import asyncio
 import logging
+import random
 import time
-from typing import Any
+from typing import Any, TypeVar, overload
 
 import httpx
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from fundamentum.infra.http.models import (
     HttpMethod,
+    RequestValidationError,
     ServiceEndpoint,
     ServiceError,
     ServiceNotFoundError,
     ServiceTimeoutError,
     ServiceUnavailableError,
+    UnresolvedPathParameterError,
 )
 from fundamentum.infra.http.registry import EndpointRegistry
-from fundamentum.infra.observability.context import get_trace_id
+from fundamentum.infra.observability.context import get_trace_id, get_traceparent
 from fundamentum.infra.observability.helpers import (
     log_http_error,
     log_http_request,
     log_http_response,
 )
+from fundamentum.infra.observability.metrics import record_request
 from fundamentum.infra.settings.registry import ServiceRegistry
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
+
+# Safe to retry automatically: no side effects beyond the first successful
+# application. POST/PATCH are excluded by default since retrying them risks
+# duplicating a non-idempotent effect (e.g. double-creating a resource).
+_IDEMPOTENT_METHODS = frozenset(
+    {HttpMethod.GET, HttpMethod.PUT, HttpMethod.DELETE, HttpMethod.HEAD, HttpMethod.OPTIONS}
+)
+_METHODS_WITH_BODY = frozenset({HttpMethod.POST, HttpMethod.PUT, HttpMethod.PATCH})
+
+# Cap on computed backoff before jitter, in seconds.
+_MAX_BACKOFF_SECONDS = 8.0
 
 
 class ServiceClient:
@@ -30,11 +48,14 @@ class ServiceClient:
 
     Features:
     - Automatic service URL resolution
-    - Request ID propagation for distributed tracing
-    - Retry logic for transient failures
+    - Request ID propagation for distributed tracing (X-Trace-ID and W3C
+      traceparent)
+    - Retry with exponential backoff + jitter for idempotent methods, on
+      connection errors, timeouts, and 5xx responses
     - Comprehensive error handling and logging
     - Request/response validation with Pydantic models
     - Timeout management
+    - A single pooled connection reused across requests (see `aclose()`)
     """
 
     def __init__(
@@ -45,6 +66,7 @@ class ServiceClient:
         max_retries: int = 3,
         service_name: str | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
+        limits: httpx.Limits | None = None,
     ):
         """Initialize the service client.
 
@@ -52,18 +74,51 @@ class ServiceClient:
             service_registry: Registry for resolving service base URLs
             endpoint_registry: Registry for endpoint definitions
             timeout: Default timeout for requests in seconds
-            max_retries: Maximum number of retry attempts for failed requests
+            max_retries: Maximum retry attempts for idempotent requests that
+                hit a transient failure (connection error, timeout, 5xx)
             service_name: Name of the calling service (for X-Service-Name header)
+            transport: Optional custom transport (used by testing helpers to
+                inject `httpx.MockTransport`)
+            limits: Optional connection pool limits for the underlying
+                `httpx.AsyncClient`
         """
         self.service_registry = service_registry
         self.endpoint_registry = endpoint_registry
         self.timeout = timeout
         self.max_retries = max_retries
         self.service_name = service_name
-        self._transport = transport
+        self._client = httpx.AsyncClient(
+            timeout=timeout, transport=transport, limits=limits or httpx.Limits()
+        )
+        self._adapters: dict[Any, TypeAdapter] = {}
+
+    async def aclose(self) -> None:
+        """Close the underlying connection pool. Call once at service shutdown."""
+        await self._client.aclose()
+
+    async def __aenter__(self) -> ServiceClient:
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        await self.aclose()
+
+    def _get_adapter(self, response_model: Any) -> TypeAdapter:
+        """Return a cached `TypeAdapter` for a response model.
+
+        `TypeAdapter` validates `BaseModel`, `list[BaseModel]`, and plain
+        types uniformly — unlike `BaseModel.model_validate`, which only
+        exists on `BaseModel` subclasses and crashes on `list[...]`.
+        """
+        adapter = self._adapters.get(response_model)
+        if adapter is None:
+            adapter = TypeAdapter(response_model)
+            self._adapters[response_model] = adapter
+        return adapter
 
     def _build_url(
-        self, endpoint: ServiceEndpoint, path_params: dict[str, Any] | None = None
+        self,
+        endpoint: ServiceEndpoint,
+        path_params: dict[str, Any] | None = None,
     ) -> str:
         """Build full URL from endpoint and path parameters.
 
@@ -73,24 +128,31 @@ class ServiceClient:
 
         Returns:
             Complete URL with base URL and resolved path parameters
+
+        Raises:
+            UnresolvedPathParameterError: If the path still contains
+                unresolved `{param}` placeholders after substitution
         """
         base_url = self.service_registry.get_base_url(endpoint.service)
         path = endpoint.path
 
-        # Replace path parameters
         if path_params:
             for key, value in path_params.items():
                 placeholder = f"{{{key}}}"
                 if placeholder not in path:
                     logger.warning(
-                        f"Path parameter '{key}' not found in endpoint path",
+                        "Path parameter '%s' not found in endpoint path",
+                        key,
                         extra={"path": path, "params": path_params},
                     )
                 path = path.replace(placeholder, str(value))
 
-        # Check for unreplaced parameters
         if "{" in path and "}" in path:
-            logger.warning("Endpoint path contains unreplaced parameters", extra={"path": path})
+            raise UnresolvedPathParameterError(
+                f"Endpoint '{endpoint.service}{endpoint.path}' has unresolved "
+                f"path parameters: '{path}'. A malformed URL was never sent.",
+                endpoint=endpoint.path,
+            )
 
         return f"{base_url}{path}"
 
@@ -105,16 +167,39 @@ class ServiceClient:
             "Accept": "application/json",
         }
 
-        # Add trace ID for distributed tracing (pass current trace, don't increment)
         trace_id = get_trace_id()
         if trace_id:
             headers["X-Trace-ID"] = trace_id
 
-        # Add service name to identify the caller
+        traceparent = get_traceparent()
+        if traceparent:
+            headers["traceparent"] = traceparent
+
         if self.service_name:
             headers["X-Service-Name"] = self.service_name
 
         return headers
+
+    @staticmethod
+    def _is_retryable_method(method: HttpMethod) -> bool:
+        return method in _IDEMPOTENT_METHODS
+
+    @staticmethod
+    def _backoff_seconds(attempt: int, retry_after: str | None) -> float:
+        """Compute how long to sleep before the next retry attempt.
+
+        Honors a `Retry-After` header (in seconds) when present; otherwise
+        uses exponential backoff with jitter, capped at
+        `_MAX_BACKOFF_SECONDS`.
+        """
+        if retry_after is not None:
+            try:
+                return max(0.0, float(retry_after))
+            except ValueError:
+                pass
+
+        base = min(2**attempt, _MAX_BACKOFF_SECONDS)
+        return base + random.uniform(0, base * 0.25)
 
     async def request(
         self,
@@ -132,198 +217,218 @@ class ServiceClient:
             body: Request body (Pydantic model)
 
         Returns:
-            Validated response data (Pydantic model instance)
+            Validated response data (a model instance, list of model
+            instances, or None for empty bodies — matching the endpoint's
+            declared `response_model`)
 
         Raises:
             KeyError: If endpoint_key is not found in registry
+            RequestValidationError: If body doesn't match the declared request_model
+            UnresolvedPathParameterError: If a required path parameter was never
+                supplied
             ServiceNotFoundError: If resource is not found (404)
-            ServiceTimeoutError: If request times out
-            ServiceUnavailableError: If service returns 5xx error
+            ServiceTimeoutError: If request times out (after retries are exhausted)
+            ServiceUnavailableError: If service returns 5xx or is unreachable
+                (after retries are exhausted)
             ServiceError: For other HTTP errors
             ValidationError: If response doesn't match expected model
         """
-        # Get endpoint definition
         endpoint = self.endpoint_registry.get(endpoint_key)
-
-        # Build URL and headers
         url = self._build_url(endpoint, path_params)
         headers = self._build_headers()
-
-        # Use endpoint-specific timeout if available
         timeout = endpoint.timeout if endpoint.timeout is not None else self.timeout
 
-        # Prepare request body
-        json_body = body.model_dump() if body else None
+        if body and endpoint.request_model and not isinstance(body, endpoint.request_model):
+            raise RequestValidationError(
+                f"Request body type {type(body)} doesn't match "
+                f"expected type {endpoint.request_model}",
+                endpoint=endpoint_key,
+            )
 
-        # Validate request body matches expected model
-        if body and endpoint.request_model:
-            if not isinstance(body, endpoint.request_model):
-                raise ValueError(
-                    f"Request body type {type(body)} doesn't match "
-                    f"expected type {endpoint.request_model}"
+        request_kwargs: dict[str, Any] = {"params": query_params, "headers": headers}
+        if endpoint.method in _METHODS_WITH_BODY:
+            request_kwargs["json"] = body.model_dump() if body else None
+
+        retryable = self._is_retryable_method(endpoint.method)
+        attempt = 0
+
+        while True:
+            log_http_request(
+                logger,
+                url_name=endpoint_key,
+                peer_service=endpoint.service,
+                url=url,
+                method=endpoint.method.value,
+            )
+            start_time = time.time()
+
+            try:
+                response = await self._client.request(
+                    endpoint.method.value, url, timeout=timeout, **request_kwargs
                 )
-
-        # Log outgoing request with structured data
-        log_http_request(
-            logger,
-            url_name=endpoint_key,
-            peer_service=endpoint.service,
-            url=url,
-            method=endpoint.method.value,
-        )
-
-        start_time = time.time()
-
-        try:
-            async with httpx.AsyncClient(timeout=timeout, transport=self._transport) as client:
-                # Make request based on HTTP method
-                if endpoint.method == HttpMethod.GET:
-                    response = await client.get(url, params=query_params, headers=headers)
-                elif endpoint.method == HttpMethod.POST:
-                    response = await client.post(
-                        url, json=json_body, params=query_params, headers=headers
-                    )
-                elif endpoint.method == HttpMethod.PUT:
-                    response = await client.put(
-                        url, json=json_body, params=query_params, headers=headers
-                    )
-                elif endpoint.method == HttpMethod.DELETE:
-                    response = await client.delete(url, params=query_params, headers=headers)
-                elif endpoint.method == HttpMethod.PATCH:
-                    response = await client.patch(
-                        url, json=json_body, params=query_params, headers=headers
-                    )
-                else:
-                    raise ValueError(f"Unsupported HTTP method: {endpoint.method}")
-
-                # Handle 404 specially
-                if response.status_code == 404:
-                    log_http_error(
-                        logger,
-                        url_name=endpoint_key,
-                        peer_service=endpoint.service,
-                        method=endpoint.method.value,
-                        error=f"Resource not found at {url}",
-                        error_type="ServiceNotFoundError",
-                        status_code=404,
-                        url=url,
-                    )
-                    raise ServiceNotFoundError(
-                        f"Resource not found at {url}",
-                        endpoint=endpoint_key,
-                    )
-
-                # Handle 5xx errors
-                if response.status_code >= 500:
-                    log_http_error(
-                        logger,
-                        url_name=endpoint_key,
-                        peer_service=endpoint.service,
-                        method=endpoint.method.value,
-                        error=f"Service unavailable: HTTP {response.status_code}",
-                        error_type="ServiceUnavailableError",
-                        status_code=response.status_code,
-                        url=url,
-                    )
-                    raise ServiceUnavailableError(
-                        f"Service unavailable: HTTP {response.status_code}",
-                        endpoint=endpoint_key,
-                        status_code=response.status_code,
-                    )
-
-                # Raise for other HTTP errors
-                response.raise_for_status()
-
-                # Log successful response
-                duration_ms = int((time.time() - start_time) * 1000)
-                log_http_response(
+            except httpx.TimeoutException as e:
+                if retryable and attempt < self.max_retries:
+                    await asyncio.sleep(self._backoff_seconds(attempt, None))
+                    attempt += 1
+                    continue
+                log_http_error(
                     logger,
                     url_name=endpoint_key,
                     peer_service=endpoint.service,
-                    status_code=response.status_code,
                     method=endpoint.method.value,
-                    duration_ms=duration_ms,
+                    error=f"Request timed out after {timeout}s",
+                    error_type="ServiceTimeoutError",
+                    timeout=timeout,
+                    url=url,
+                    attempts=attempt + 1,
+                )
+                raise ServiceTimeoutError(
+                    f"Request to {url} timed out after {timeout}s ({attempt + 1} attempt(s))",
+                    endpoint=endpoint_key,
+                ) from e
+            except httpx.TransportError as e:
+                if retryable and attempt < self.max_retries:
+                    await asyncio.sleep(self._backoff_seconds(attempt, None))
+                    attempt += 1
+                    continue
+                log_http_error(
+                    logger,
+                    url_name=endpoint_key,
+                    peer_service=endpoint.service,
+                    method=endpoint.method.value,
+                    error=str(e),
+                    error_type=type(e).__name__,
+                    url=url,
+                    attempts=attempt + 1,
+                )
+                raise ServiceUnavailableError(
+                    f"Connection to {url} failed: {e} ({attempt + 1} attempt(s))",
+                    endpoint=endpoint_key,
+                ) from e
+
+            if response.status_code == 404:
+                log_http_error(
+                    logger,
+                    url_name=endpoint_key,
+                    peer_service=endpoint.service,
+                    method=endpoint.method.value,
+                    error=f"Resource not found at {url}",
+                    error_type="ServiceNotFoundError",
+                    status_code=404,
                     url=url,
                 )
+                raise ServiceNotFoundError(
+                    f"Resource not found at {url}",
+                    endpoint=endpoint_key,
+                )
 
-                # Parse and validate response
-                if response.content:
-                    response_data = response.json()
+            if response.status_code >= 500:
+                if retryable and attempt < self.max_retries:
+                    await asyncio.sleep(
+                        self._backoff_seconds(attempt, response.headers.get("Retry-After"))
+                    )
+                    attempt += 1
+                    continue
+                log_http_error(
+                    logger,
+                    url_name=endpoint_key,
+                    peer_service=endpoint.service,
+                    method=endpoint.method.value,
+                    error=f"Service unavailable: HTTP {response.status_code}",
+                    error_type="ServiceUnavailableError",
+                    status_code=response.status_code,
+                    url=url,
+                    attempts=attempt + 1,
+                )
+                raise ServiceUnavailableError(
+                    f"Service unavailable: HTTP {response.status_code} ({attempt + 1} attempt(s))",
+                    endpoint=endpoint_key,
+                    status_code=response.status_code,
+                )
 
-                    # Validate against response model
-                    try:
-                        validated_response = endpoint.response_model.model_validate(response_data)
-                        return validated_response
-                    except ValidationError as e:
-                        log_http_error(
-                            logger,
-                            url_name=endpoint_key,
-                            peer_service=endpoint.service,
-                            method=endpoint.method.value,
-                            error="Response validation failed",
-                            error_type="ValidationError",
-                            validation_errors=e.errors(),
-                            url=url,
-                        )
-                        raise
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                log_http_error(
+                    logger,
+                    url_name=endpoint_key,
+                    peer_service=endpoint.service,
+                    method=endpoint.method.value,
+                    error=f"HTTP error {e.response.status_code}",
+                    error_type="HTTPStatusError",
+                    status_code=e.response.status_code,
+                    response_body=e.response.text[:500],
+                    url=url,
+                )
+                raise ServiceError(
+                    f"HTTP error {e.response.status_code}: {e.response.text[:200]}",
+                    endpoint=endpoint_key,
+                    status_code=e.response.status_code,
+                ) from e
 
+            duration_ms = int((time.time() - start_time) * 1000)
+            log_http_response(
+                logger,
+                url_name=endpoint_key,
+                peer_service=endpoint.service,
+                status_code=response.status_code,
+                method=endpoint.method.value,
+                duration_ms=duration_ms,
+                url=url,
+            )
+            record_request(
+                peer_service=endpoint.service,
+                method=endpoint.method.value,
+                url_name=endpoint_key,
+                status_code=response.status_code,
+                duration_ms=duration_ms,
+                direction="outbound",
+            )
+
+            if not response.content:
                 return None
 
-        except httpx.TimeoutException as e:
-            log_http_error(
-                logger,
-                url_name=endpoint_key,
-                peer_service=endpoint.service,
-                method=endpoint.method.value,
-                error=f"Request timed out after {timeout}s",
-                error_type="ServiceTimeoutError",
-                timeout=timeout,
-                url=url,
-            )
-            raise ServiceTimeoutError(
-                f"Request to {url} timed out after {timeout}s",
-                endpoint=endpoint_key,
-            ) from e
+            response_data = response.json()
+            try:
+                return self._get_adapter(endpoint.response_model).validate_python(response_data)
+            except ValidationError as e:
+                log_http_error(
+                    logger,
+                    url_name=endpoint_key,
+                    peer_service=endpoint.service,
+                    method=endpoint.method.value,
+                    error="Response validation failed",
+                    error_type="ValidationError",
+                    validation_errors=e.errors(),
+                    url=url,
+                )
+                raise
 
-        except httpx.HTTPStatusError as e:
-            log_http_error(
-                logger,
-                url_name=endpoint_key,
-                peer_service=endpoint.service,
-                method=endpoint.method.value,
-                error=f"HTTP error {e.response.status_code}",
-                error_type="HTTPStatusError",
-                status_code=e.response.status_code,
-                response_body=e.response.text[:500],
-                url=url,
-            )
-            raise ServiceError(
-                f"HTTP error {e.response.status_code}: {e.response.text[:200]}",
-                endpoint=endpoint_key,
-                status_code=e.response.status_code,
-            ) from e
+    @overload
+    async def get(
+        self,
+        endpoint_key: str,
+        *,
+        response_type: type[T],
+        path_params: dict[str, Any] | None = None,
+        query_params: dict[str, Any] | None = None,
+    ) -> T: ...
 
-        except ServiceError:
-            raise
-
-        except Exception as e:
-            log_http_error(
-                logger,
-                url_name=endpoint_key,
-                peer_service=endpoint.service,
-                method=endpoint.method.value,
-                error=str(e),
-                error_type=type(e).__name__,
-                url=url,
-            )
-            raise ServiceError(
-                f"Request failed: {str(e)}",
-                endpoint=endpoint_key,
-            ) from e
+    @overload
+    async def get(
+        self,
+        endpoint_key: str,
+        *,
+        response_type: None = None,
+        path_params: dict[str, Any] | None = None,
+        query_params: dict[str, Any] | None = None,
+    ) -> Any: ...
 
     async def get(
         self,
         endpoint_key: str,
+        *,
+        response_type: type[T] | None = None,
         path_params: dict[str, Any] | None = None,
         query_params: dict[str, Any] | None = None,
     ) -> Any:
@@ -331,6 +436,11 @@ class ServiceClient:
 
         Args:
             endpoint_key: Endpoint identifier
+            response_type: Optional type hint matching the endpoint's declared
+                `response_model` — purely a static-typing aid, so callers get
+                a concrete return type instead of `Any`. It doesn't change
+                validation, which always uses the endpoint's own
+                `response_model`.
             path_params: Path parameters to replace in URL
             query_params: Query string parameters
 
@@ -343,10 +453,34 @@ class ServiceClient:
             query_params=query_params,
         )
 
+    @overload
     async def post(
         self,
         endpoint_key: str,
         body: BaseModel,
+        *,
+        response_type: type[T],
+        path_params: dict[str, Any] | None = None,
+        query_params: dict[str, Any] | None = None,
+    ) -> T: ...
+
+    @overload
+    async def post(
+        self,
+        endpoint_key: str,
+        body: BaseModel,
+        *,
+        response_type: None = None,
+        path_params: dict[str, Any] | None = None,
+        query_params: dict[str, Any] | None = None,
+    ) -> Any: ...
+
+    async def post(
+        self,
+        endpoint_key: str,
+        body: BaseModel,
+        *,
+        response_type: type[T] | None = None,
         path_params: dict[str, Any] | None = None,
         query_params: dict[str, Any] | None = None,
     ) -> Any:
@@ -355,6 +489,7 @@ class ServiceClient:
         Args:
             endpoint_key: Endpoint identifier
             body: Request body (Pydantic model)
+            response_type: See `get()` — static-typing aid only.
             path_params: Path parameters to replace in URL
             query_params: Query string parameters
 
@@ -368,10 +503,34 @@ class ServiceClient:
             body=body,
         )
 
+    @overload
     async def put(
         self,
         endpoint_key: str,
         body: BaseModel,
+        *,
+        response_type: type[T],
+        path_params: dict[str, Any] | None = None,
+        query_params: dict[str, Any] | None = None,
+    ) -> T: ...
+
+    @overload
+    async def put(
+        self,
+        endpoint_key: str,
+        body: BaseModel,
+        *,
+        response_type: None = None,
+        path_params: dict[str, Any] | None = None,
+        query_params: dict[str, Any] | None = None,
+    ) -> Any: ...
+
+    async def put(
+        self,
+        endpoint_key: str,
+        body: BaseModel,
+        *,
+        response_type: type[T] | None = None,
         path_params: dict[str, Any] | None = None,
         query_params: dict[str, Any] | None = None,
     ) -> Any:
@@ -380,6 +539,7 @@ class ServiceClient:
         Args:
             endpoint_key: Endpoint identifier
             body: Request body (Pydantic model)
+            response_type: See `get()` — static-typing aid only.
             path_params: Path parameters to replace in URL
             query_params: Query string parameters
 
@@ -393,9 +553,31 @@ class ServiceClient:
             body=body,
         )
 
+    @overload
     async def delete(
         self,
         endpoint_key: str,
+        *,
+        response_type: type[T],
+        path_params: dict[str, Any] | None = None,
+        query_params: dict[str, Any] | None = None,
+    ) -> T: ...
+
+    @overload
+    async def delete(
+        self,
+        endpoint_key: str,
+        *,
+        response_type: None = None,
+        path_params: dict[str, Any] | None = None,
+        query_params: dict[str, Any] | None = None,
+    ) -> Any: ...
+
+    async def delete(
+        self,
+        endpoint_key: str,
+        *,
+        response_type: type[T] | None = None,
         path_params: dict[str, Any] | None = None,
         query_params: dict[str, Any] | None = None,
     ) -> Any:
@@ -403,6 +585,7 @@ class ServiceClient:
 
         Args:
             endpoint_key: Endpoint identifier
+            response_type: See `get()` — static-typing aid only.
             path_params: Path parameters to replace in URL
             query_params: Query string parameters
 

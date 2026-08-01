@@ -1,3 +1,5 @@
+import re
+
 import pytest
 from pydantic_settings import BaseSettings
 
@@ -45,7 +47,7 @@ class TestServiceRegistry:
     def test_get_base_url_nonexistent_service(self, registry):
         with pytest.raises(
             ValueError,
-            match="Service 'invalid_service' is not configured. Available services:",
+            match=re.escape("Service 'invalid_service' is not configured. Available services:"),
         ):
             registry.get_base_url("invalid_service")
 

@@ -1,7 +1,7 @@
 from typing import Literal
 
-from pydantic import ConfigDict, Field
-from pydantic_settings import BaseSettings
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class BaseServiceSettings(BaseSettings):
@@ -15,7 +15,7 @@ class BaseServiceSettings(BaseSettings):
     Subclass this to add service-specific configuration.
     """
 
-    model_config = ConfigDict(
+    model_config = SettingsConfigDict(
         env_prefix="",
         env_file=".env",
         env_file_encoding="utf-8",

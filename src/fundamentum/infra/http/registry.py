@@ -131,7 +131,25 @@ _global_registry = EndpointRegistry()
 
 
 def get_global_registry() -> EndpointRegistry:
-    """Get the global endpoint registry instance.
+    """Get the process-wide global endpoint registry instance.
+
+    Prefer constructing your own `EndpointRegistry()` and passing it
+    explicitly to `ServiceClient` — that's what every example and test in
+    this library does. This global exists only as a convenience for
+    services that want one ambient registry without threading it through
+    dependency injection everywhere.
+
+    Footgun: because it's shared module-level state, tests that register
+    endpoints on it (directly or via code under test) can leak registrations
+    into unrelated tests if the suite runs in the same process, causing
+    order-dependent failures that are hard to reproduce in isolation. If you
+    do use this global in a test, reset it in a fixture:
+
+        @pytest.fixture(autouse=True)
+        def _reset_global_registry():
+            get_global_registry().clear()
+            yield
+            get_global_registry().clear()
 
     Returns:
         Global EndpointRegistry instance

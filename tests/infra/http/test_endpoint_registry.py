@@ -1,13 +1,35 @@
+import re
+
 import pytest
 from pydantic import BaseModel
 
 from fundamentum.infra.http.models import HttpMethod, ServiceEndpoint
-from fundamentum.infra.http.registry import EndpointRegistry
+from fundamentum.infra.http.registry import EndpointRegistry, get_global_registry
 
 
 @pytest.fixture
 def registry():
     return EndpointRegistry()
+
+
+@pytest.fixture(autouse=True)
+def reset_global_registry():
+    # The global registry is process-wide shared state (see get_global_registry's
+    # docstring) — clear it before and after so this test never leaks
+    # registrations into the rest of the suite.
+    get_global_registry().clear()
+    yield
+    get_global_registry().clear()
+
+
+class TestGlobalRegistry:
+    def test_returns_the_same_instance_across_calls(self):
+        assert get_global_registry() is get_global_registry()
+
+    def test_registrations_persist_on_the_shared_instance(self, census_endpoint):
+        get_global_registry().register("census.customer_by_id", census_endpoint)
+
+        assert get_global_registry().has("census.customer_by_id")
 
 
 @pytest.fixture
@@ -44,12 +66,12 @@ class TestEndpointRegistry:
         registry.register("census.customer_by_id", census_endpoint)
 
         with pytest.raises(
-            ValueError, match="Endpoint 'census.customer_by_id' is already registered"
+            ValueError, match=re.escape("Endpoint 'census.customer_by_id' is already registered")
         ):
             registry.register("census.customer_by_id", census_endpoint)
 
     def test_get_nonexistent_endpoint_raises_error(self, registry):
-        with pytest.raises(KeyError, match="Endpoint 'nonexistent.endpoint' not found"):
+        with pytest.raises(KeyError, match=re.escape("Endpoint 'nonexistent.endpoint' not found")):
             registry.get("nonexistent.endpoint")
 
     def test_has_endpoint(self, registry, census_endpoint):
@@ -104,7 +126,7 @@ class TestEndpointRegistry:
         assert not registry.has("census.customer_by_id")
 
     def test_unregister_nonexistent_endpoint_raises_error(self, registry):
-        with pytest.raises(KeyError, match="Endpoint 'nonexistent.endpoint' not found"):
+        with pytest.raises(KeyError, match=re.escape("Endpoint 'nonexistent.endpoint' not found")):
             registry.unregister("nonexistent.endpoint")
 
     def test_clear_registry(self, registry, census_endpoint, hermes_endpoint):
@@ -139,6 +161,7 @@ class TestEndpointRegistry:
         }
 
         with pytest.raises(
-            ValueError, match="Cannot register endpoints: already registered: census.customer_by_id"
+            ValueError,
+            match=re.escape("Cannot register endpoints: already registered: census.customer_by_id"),
         ):
             registry.bulk_register(endpoints)

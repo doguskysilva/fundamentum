@@ -12,14 +12,17 @@ from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from fundamentum.infra.observability.context import (
+    generate_traceparent,
     increment_trace_id,
     set_trace_id,
+    set_traceparent,
 )
 from fundamentum.infra.observability.helpers import (
     log_service_error,
     log_service_request,
     log_service_response,
 )
+from fundamentum.infra.observability.metrics import record_request
 
 logger = logging.getLogger(__name__)
 
@@ -32,13 +35,17 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
     - Logs all incoming requests with duration and status
     - Propagates trace ID through context variables
     - Adds trace ID to response headers
+    - Mirrors the same hop as a W3C traceparent header for interop with
+      standard tracing backends
 
     The middleware automatically:
     - Extracts X-Trace-ID from headers and appends a new segment
     - If no X-Trace-ID exists, creates a new trace with generated segment
     - Stores trace ID in context variable for use in logging
+    - Extracts/generates a traceparent header the same way (see
+      `fundamentum.infra.observability.context.generate_traceparent`)
     - Logs request completion with method, path, status, and duration
-    - Adds X-Trace-ID to response headers for tracing
+    - Adds X-Trace-ID and traceparent to response headers for tracing
 
     Trace ID Flow:
     - UI calls service: 'UICALL.C32PO'
@@ -76,6 +83,13 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
         incoming_trace_id = request.headers.get("X-Trace-ID")
         trace_id = increment_trace_id(incoming_trace_id)
         set_trace_id(trace_id)
+
+        # Mirror the same hop onto a W3C traceparent so this request also
+        # shows up correctly in standard tracing backends (Jaeger, Tempo,
+        # etc.), independent of the homegrown X-Trace-ID chain above.
+        incoming_traceparent = request.headers.get("traceparent")
+        traceparent = generate_traceparent(incoming_traceparent)
+        set_traceparent(traceparent)
 
         # Extract peer service from header or use "unknown"
         peer_service = request.headers.get("X-Service-Name", "unknown")
@@ -123,6 +137,16 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
                 duration_ms=duration_ms,
             )
 
-            # Add trace ID to response headers if response exists
+            record_request(
+                peer_service=peer_service,
+                method=request.method,
+                url_name=url_name,
+                status_code=status_code,
+                duration_ms=duration_ms,
+                direction="inbound",
+            )
+
+            # Add trace headers to the response if it exists
             if response is not None:
                 response.headers["X-Trace-ID"] = trace_id
+                response.headers["traceparent"] = traceparent
