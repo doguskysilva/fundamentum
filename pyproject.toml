@@ -18,14 +18,7 @@ dependencies = [
   "fastapi>=0.128",
   "httpx>=0.28",
   "pydantic-settings>=2.12.0",
-  "pytest-asyncio>=1.3.0",
   "python-json-logger>=4.0.0",
-]
-
-[project.optional-dependencies]
-dev = [
-  "pytest",
-  "ruff",
 ]
 
 [tool.setuptools]
@@ -36,9 +29,8 @@ where = ["src"]
 
 [dependency-groups]
 dev = [
-    "pydantic[settings]>=2.12.5",
     "pytest>=9.0.2",
-    "pytest-asyncio>=0.25.2",
+    "pytest-asyncio>=1.3.0",
     "ruff>=0.14.11",
 ]
 

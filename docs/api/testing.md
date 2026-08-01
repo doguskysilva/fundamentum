@@ -1,252 +1,139 @@
-# Testing Module
+# HTTP Testing Utilities
 
-HTTP mocking utilities for testing with MockTransport and mock endpoints.
+Mocking helpers for `fundamentum.infra.http`. These utilities are scoped to
+inter-service HTTP calls made through `ServiceClient` — there is no general
+testing toolkit for observability or settings; use each module's own objects
+directly in tests (e.g. a plain `SimpleNamespace` for settings, as shown in
+`tests/infra/settings/test_settings_registry.py`).
 
 ## Components
 
-- **MockHttpTransport** - Wraps httpx.MockTransport
-- **mock_endpoint** - Create mock responses
-
-## Basic Usage
-
-```python
-import pytest
-from fundamentum.infra.http.testing import MockHttpTransport, mock_endpoint
-
-@pytest.fixture
-def mock_transport():
-    return MockHttpTransport([
-        mock_endpoint(
-            "https://api.example.com/users/123",
-            "GET",
-            response_json={"id": "123", "name": "John"}
-        ),
-    ])
-
-async def test_api_call(mock_transport):
-    async with httpx.AsyncClient(transport=mock_transport) as client:
-        response = await client.get("https://api.example.com/users/123")
-        assert response.status_code == 200
-        assert response.json()["name"] == "John"
-```
+- **`MockHttpTransport`** — builds an `httpx.MockTransport` from
+  method+URL-keyed responses you register up front
+- **`mock_endpoint`** — registers a mock response on a `MockHttpTransport` for
+  a `ServiceEndpoint` already declared in an `EndpointRegistry`, resolving the
+  URL (including path params) the same way `ServiceClient` does at runtime
 
 ## MockHttpTransport
 
 ```python
-from fundamentum.infra.http.testing import MockHttpTransport, mock_endpoint
+from fundamentum.infra.http.testing import MockHttpTransport
 
-# Single endpoint
-transport = MockHttpTransport([
-    mock_endpoint(
-        "https://api.example.com/users",
-        "GET",
-        response_json={"users": []}
-    ),
-])
+transport = MockHttpTransport()
+transport.register_response(
+    method="GET",
+    url="https://census.test/api/users/123",
+    status_code=200,
+    json_body={"id": "123", "name": "John"},
+)
 
-# Multiple endpoints
-transport = MockHttpTransport([
-    mock_endpoint("https://api.example.com/users/123", "GET", response_json={"id": "123"}),
-    mock_endpoint("https://api.example.com/users", "POST", status_code=201),
-])
+# Use directly with httpx
+import httpx
 
-# Use with client
-async with httpx.AsyncClient(transport=transport) as client:
-    response = await client.get("https://api.example.com/users/123")
+async with httpx.AsyncClient(transport=transport.build()) as client:
+    response = await client.get("https://census.test/api/users/123")
+    assert response.status_code == 200
 ```
+
+Requesting an unregistered `(method, url)` pair raises `RuntimeError`.
 
 ## mock_endpoint
 
+`mock_endpoint` saves you from hand-building the URL: it takes the same
+`ServiceEndpoint` and `ServiceRegistry` your production code uses, so the
+mocked URL can never drift from what `ServiceClient` will actually request.
+
 ```python
-from fundamentum.infra.http.testing import mock_endpoint
+from fundamentum.infra.http.testing import MockHttpTransport, mock_endpoint
 
-# JSON response
-endpoint = mock_endpoint(
-    "https://api.example.com/users",
-    "GET",
-    response_json={"users": []}
-)
+endpoint = endpoint_registry.get("census.get_user")
 
-# Text response
-endpoint = mock_endpoint(
-    "https://api.example.com/data",
-    "GET",
-    response_text="Hello, World!"
-)
-
-# Custom status code
-endpoint = mock_endpoint(
-    "https://api.example.com/users",
-    "POST",
-    status_code=201,
-    response_json={"id": "123"}
-)
-
-# Custom headers
-endpoint = mock_endpoint(
-    "https://api.example.com/users",
-    "GET",
-    headers={"X-Custom-Header": "value"},
-    response_json={}
+mock_endpoint(
+    transport=mock_transport,
+    endpoint_key="census.get_user",
+    endpoint=endpoint,
+    service_registry=service_registry,
+    path_params={"user_id": "123"},
+    status_code=200,
+    json_body={"id": "123", "name": "John", "email": "john@test.com"},
 )
 ```
 
-## ServiceClient Testing
+## Full Example — Testing a ServiceClient Call
 
 ```python
 import pytest
-from fundamentum.infra.http import ServiceClient
+from pydantic import BaseModel
+
+from fundamentum.infra.http import EndpointRegistry, HttpMethod, ServiceClient, ServiceEndpoint
 from fundamentum.infra.http.testing import MockHttpTransport, mock_endpoint
+from fundamentum.infra.settings import ServiceRegistry
+
+
+class UserResponse(BaseModel):
+    id: str
+    name: str
+    email: str
+
 
 @pytest.fixture
-def census_client():
-    transport = MockHttpTransport([
-        mock_endpoint(
-            "https://census.test/api/customers/123",
-            "GET",
-            response_json={"id": "123", "name": "John"}
+def service_registry():
+    from types import SimpleNamespace
+
+    settings = SimpleNamespace(census_base_url="https://census.test")
+    return ServiceRegistry(settings)
+
+
+@pytest.fixture
+def endpoint_registry():
+    registry = EndpointRegistry()
+    registry.register(
+        "census.get_user",
+        ServiceEndpoint(
+            service="census",
+            path="/api/users/{user_id}",
+            method=HttpMethod.GET,
+            request_model=None,
+            response_model=UserResponse,
         ),
-    ])
-    
-    client = ServiceClient(
-        service_name="census",
-        base_url="https://census.test",
-        timeout=30.0,
-        transport=transport,
     )
-    
-    return client
+    return registry
 
-async def test_get_customer(census_client):
-    response = await census_client.get("/api/customers/123")
-    
-    assert response.status_code == 200
-    data = response.json()
-    assert data["id"] == "123"
-    assert data["name"] == "John"
-```
 
-## Error Responses
-
-```python
-# 404 Not Found
-transport = MockHttpTransport([
+async def test_get_user(service_registry, endpoint_registry):
+    mock_transport = MockHttpTransport()
     mock_endpoint(
-        "https://api.example.com/users/999",
-        "GET",
-        status_code=404,
-        response_json={"error": "User not found"}
-    ),
-])
-
-# 500 Server Error
-transport = MockHttpTransport([
-    mock_endpoint(
-        "https://api.example.com/users",
-        "POST",
-        status_code=500,
-        response_json={"error": "Internal server error"}
-    ),
-])
-
-# Test error handling
-async def test_not_found():
-    async with httpx.AsyncClient(transport=transport) as client:
-        response = await client.get("https://api.example.com/users/999")
-        assert response.status_code == 404
-```
-
-## Multiple Requests
-
-```python
-# Mock multiple endpoints
-transport = MockHttpTransport([
-    mock_endpoint(
-        "https://api.example.com/users/123",
-        "GET",
-        response_json={"id": "123", "name": "John"}
-    ),
-    mock_endpoint(
-        "https://api.example.com/posts/456",
-        "GET",
-        response_json={"id": "456", "title": "Hello"}
-    ),
-])
-
-async def test_multiple_calls():
-    async with httpx.AsyncClient(transport=transport) as client:
-        user_response = await client.get("https://api.example.com/users/123")
-        post_response = await client.get("https://api.example.com/posts/456")
-        
-        assert user_response.json()["name"] == "John"
-        assert post_response.json()["title"] == "Hello"
-```
-
-## Complete Example
-
-```python
-import pytest
-from fundamentum.infra.http import ServiceClient, ServiceRegistry
-from fundamentum.infra.http.testing import MockHttpTransport, mock_endpoint
-
-@pytest.fixture
-def registry():
-    return ServiceRegistry()
-
-@pytest.fixture
-def mock_census_transport():
-    return MockHttpTransport([
-        mock_endpoint(
-            "https://census.test/api/customers/123",
-            "GET",
-            response_json={"id": "123", "name": "John", "email": "john@example.com"}
-        ),
-        mock_endpoint(
-            "https://census.test/api/customers",
-            "POST",
-            status_code=201,
-            response_json={"id": "456", "name": "Jane"}
-        ),
-    ])
-
-@pytest.fixture
-def census_client(registry, mock_census_transport):
-    client = ServiceClient(
-        service_name="census",
-        base_url="https://census.test",
-        transport=mock_census_transport,
+        transport=mock_transport,
+        endpoint_key="census.get_user",
+        endpoint=endpoint_registry.get("census.get_user"),
+        service_registry=service_registry,
+        path_params={"user_id": "123"},
+        json_body={"id": "123", "name": "John", "email": "john@test.com"},
     )
-    registry.register(client)
-    return client
 
-async def test_get_customer(census_client):
-    response = await census_client.get("/api/customers/123")
-    assert response.status_code == 200
-    
-    data = response.json()
-    assert data["id"] == "123"
-    assert data["name"] == "John"
+    client = ServiceClient(
+        service_registry=service_registry,
+        endpoint_registry=endpoint_registry,
+        transport=mock_transport.build(),
+    )
 
-async def test_create_customer(census_client):
-    payload = {"name": "Jane", "email": "jane@example.com"}
-    response = await census_client.post("/api/customers", json=payload)
-    
-    assert response.status_code == 201
-    data = response.json()
-    assert data["id"] == "456"
-    assert data["name"] == "Jane"
+    response = await client.get("census.get_user", path_params={"user_id": "123"})
+
+    assert isinstance(response, UserResponse)
+    assert response.name == "John"
 ```
+
+Error responses (404, 5xx) are mocked the same way — set `status_code` on
+`mock_endpoint` or `register_response` and assert that `ServiceClient` raises
+the matching `ServiceNotFoundError` / `ServiceUnavailableError` (see
+`docs/api/http.md#error-handling`).
 
 ## API Reference
 
-**Classes:**
-- `MockHttpTransport(handlers)` - HTTP mock transport for testing
-- `mock_endpoint(url, method, ...)` - Create mock HTTP endpoint
+**`MockHttpTransport()`**
+- `register_response(*, method: str, url: str, status_code: int = 200, json_body: dict | list | None = None)`
+- `build() -> httpx.MockTransport`
 
-**Parameters:**
-- `url: str` - Full URL to mock
-- `method: str` - HTTP method (GET, POST, etc.)
-- `status_code: int` - Response status (default: 200)
-- `response_json: dict` - JSON response body
-- `response_text: str` - Text response body
-- `headers: dict` - Response headers
+**`mock_endpoint(*, transport, endpoint_key, endpoint, service_registry, path_params=None, status_code=200, json_body=None) -> None`**
+- Resolves the endpoint's URL via `service_registry` and `endpoint.path`
+  (substituting `path_params`), then registers it on `transport`.

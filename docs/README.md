@@ -82,4 +82,4 @@ async def get_customer(customer_id: str):
 - **[HTTP](api/http.md)** - Inter-service HTTP client and endpoints
 - **[Settings](api/settings.md)** - Configuration management
 - **[Observability](api/observability.md)** - Logging and request tracking
-- **[Testing](api/testing.md)** - Mocking utilities
+- **[Testing](api/testing.md)** - Mocking utilities for `ServiceClient` / peer-service HTTP calls

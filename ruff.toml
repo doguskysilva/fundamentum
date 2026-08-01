@@ -22,7 +22,3 @@ known-first-party = ["fundamentum"]
 
 [lint.flake8-tidy-imports]
 ban-relative-imports = "all"
-
-# Aplica essas regras SOMENTE ao utils
-[lint.per-file-ignores]
-"src/fundamentum/utils/*.py" = []

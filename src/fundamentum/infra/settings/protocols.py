@@ -10,5 +10,13 @@ class SettingsProtocol(Protocol):
 
 
 class ServiceSettingsProtocol(Protocol):
-    
+    """Accepts any settings object with arbitrary attributes.
+
+    Deliberately unconstrained: `ServiceRegistry` resolves peer service URLs
+    by probing for attributes named `{service}_base_url`, and those names are
+    defined per-subclass by each microservice, not known ahead of time. A
+    protocol declaring fixed fields (like `SettingsProtocol` above) couldn't
+    express that, so this one only asserts "any attribute is readable".
+    """
+
     def __getattribute__(self, name: str) -> Any: ...

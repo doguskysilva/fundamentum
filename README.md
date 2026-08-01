@@ -33,7 +33,7 @@ It contains no business logic and no domain models — see
 
 ## Requirements
 
-- Python 3.12+
+- Python 3.11+
 - FastAPI / Pydantic
 
 The project uses [`uv`](https://github.com/astral-sh/uv) for dependency
@@ -85,11 +85,8 @@ Each microservice remains responsible for:
 Used as a Git dependency (pin to a published tag):
 
 ```
-fundamentum @ git+https://github.com/doguskysilva/fundamentum.git@v0.1.0
+fundamentum @ git+https://github.com/doguskysilva/fundamentum.git@v0.2.0
 ```
-
-> If no release has been tagged yet, point at `@main` instead of `@v0.1.0`
-> until the first version is published, otherwise the install will fail.
 
 Or install locally for development:
 
@@ -158,10 +155,8 @@ For detailed documentation, see the [docs/](docs) directory:
 - **[HTTP Module](docs/api/http.md)** — Inter-service communication
 - **[Settings Module](docs/api/settings.md)** — Configuration management
 - **[Observability Module](docs/api/observability.md)** — Logging and tracing
-- **[Testing Module](docs/api/testing.md)** — Testing utilities
+- **[HTTP Testing Utilities](docs/api/testing.md)** — Mocking peer-service HTTP calls
 
 ## License
 
-<!-- Add a LICENSE file and reference it here. Without one, the default is
-     "all rights reserved", which may not be what you want for a shared
-     internal package. -->
+MIT — see [LICENSE](LICENSE).
